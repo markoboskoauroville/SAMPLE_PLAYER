@@ -133,10 +133,19 @@ jobs:
           echo "loops examined:         $LOOPS"
           echo "written as while(true): $UNBOUNDED"
           echo "waits (delay):          $WAITS"
-          # There is no network, no file wait and no IPC in this app, so the only external wait
-          # is the timer, and its interval is bounded to 1..100ms by Face.untilNextTenth, which
-          # Test 1 asserts. If either number moves, somebody has added a wait, and this line is
-          # where the reader is sent to find its deadline.
+          # THIS APP NOW HAS A NETWORK, and this comment used to say it did not. It was inherited
+          # from the stopwatch, where it was true, and it survived six versions of an app that
+          # grew transcription and two speech engines. A comment that describes a previous app is
+          # worse than no comment: it is the reason NEVER GREP SOURCE AS PROSE is a rule here.
+          #
+          # The waits that exist and their deadlines:
+          #   the playhead poll        60ms, ends when playback ends
+          #   the transcription poll   1.5s, bounded by a 60s ceiling in Transcribe.of
+          #   the retake gap           150ms, once, between stopping one slot and starting the next
+          # Every network call carries its own connect and read timeouts, set in Net.
+          #
+          # If either number moves, somebody has added a wait, and this is where the reader is
+          # sent to find its deadline.
           [ "$UNBOUNDED" = "0" ] || { echo "an unbounded loop is present"; exit 1; }
           [ "$LOOPS" -ge 2 ] || { echo "found fewer loops than exist: this check is broken, not the code"; exit 1; }
           [ "$WAITS" -ge 1 ] || { echo "the tick has no delay: this check is broken, not the code"; exit 1; }

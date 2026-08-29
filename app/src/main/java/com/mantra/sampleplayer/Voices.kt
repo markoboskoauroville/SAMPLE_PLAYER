@@ -103,6 +103,9 @@ object Transcribe {
  */
 object Engines {
 
+    /** More voices than any account has. A ceiling on the scan, not a claim about the reply. */
+    private const val MAX_VOICES = 500
+
     const val SPEECHIFY = "speechify"
     const val HUME = "hume"
 
@@ -156,9 +159,15 @@ object Engines {
             if (r.status == Status.LIMITED) ring.rest(c, 60_000)
             return emptyList()
         }
+        // A BOUNDED LOOP, NOT `while (true)` WITH A BREAK IN IT.
+        //
+        // G5 of the delivery gate refused the build over this and was right to. The break made it
+        // terminate, but "it terminates because of a condition in the middle" is exactly the shape
+        // that stops terminating when somebody edits the middle. The ceiling is generous — no
+        // account has more than a few dozen voices — and it is a ceiling rather than a promise.
         val out = ArrayList<Voice>()
         var from = 0
-        while (true) {
+        for (unused in 0 until MAX_VOICES) {
             val at = r.body.indexOf("\"id\":", from)
             if (at < 0) break
             val chunk = r.body.substring(at, minOf(r.body.length, at + 1200))
