@@ -561,9 +561,10 @@ class SamplePlayerTest {
         // Not required, but if one of these ever leaves a page holding a single cell it should be
         // a decision rather than a surprise.
         for (n in listOf(15, 30, 60, 120)) {
-            val pages = Paging.pageCount(n)
+            val pages = Grid.pageCount(n, 1)
+            val per = Grid.perPage(n, 1)
             assertTrue("$n cells gave $pages pages", pages >= 1)
-            assertEquals(n, (0 until pages).sumOf { Paging.slotsOn(it, n).count() })
+            assertEquals(n, (0 until pages).sumOf { Paging.slotsOn(it, n, per).count() })
         }
     }
 
@@ -589,7 +590,11 @@ class SamplePlayerTest {
         // thirty that spends one on navigation is a set of twenty-nine, and the arrow would sit
         // somewhere different on every page.
         for (n in listOf(15, 30, 60, 120)) {
-            assertEquals(n, (0 until Paging.pageCount(n)).sumOf { Paging.slotsOn(it, n).count() })
+            val per = Grid.perPage(n, 1)
+            assertEquals(
+                n,
+                (0 until Grid.pageCount(n, 1)).sumOf { Paging.slotsOn(it, n, per).count() },
+            )
         }
     }
 
@@ -705,8 +710,10 @@ class SamplePlayerTest {
 
     @Test fun `a project reports its own size and page count`() {
         assertEquals(15, sized(15).size)
-        assertEquals(1, sized(15).pages)
-        assertEquals(4, sized(120).pages)
+        // The spread is now a choice, so a project cannot report a page count on its own.
+        assertEquals(1, sized(15).pages(1))
+        assertEquals(3, sized(15).pages(3))
+        assertEquals(4, sized(120).pages(4))
     }
 
     // ── TITLES ────────────────────────────────────────────────────────────────────────────────
