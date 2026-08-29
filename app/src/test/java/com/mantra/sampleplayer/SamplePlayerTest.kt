@@ -411,6 +411,157 @@ class SamplePlayerTest {
         assertNull(ring.current())
     }
 
+    // ── THE VOICE CATALOGUE ───────────────────────────────────────
+
+    // Shapes taken from the live catalogues on 29.8.2026: Hume tags its voices LANGUAGE, ACCENT,
+    // GENDER and AGE; Speechify uses namespaced tags and a locale code.
+    private val beatrice = VoiceInfo(
+        Engines.SPEECHIFY, "beatrice_32", "Beatrice", "simba-3.2",
+        gender = "Female", age = "middle-aged", language = "English", accent = "british",
+        tags = setOf("use-case:audiobook", "timbre:warm", "locale:en-gb", "accent:british"),
+    )
+    private val colton = VoiceInfo(
+        Engines.HUME, "d8ab67c6", "Colton Rivers", "",
+        gender = "Male", age = "Middle-Aged", language = "English", accent = "Texas",
+        tags = setOf("gender:male", "accent:texas", "accent:southern", "language:english"),
+    )
+    private val aadi = VoiceInfo(
+        Engines.SPEECHIFY, "aadi", "Aadi", "simba-english",
+        gender = "Male", age = "young-adult", language = "Hindi", accent = "hi-IN",
+        tags = setOf("use-case:podcast", "locale:hi-in"),
+    )
+    private val cat get() = listOf(beatrice, colton, aadi)
+
+    @Test fun `a term matches on a word prefix, not on a substring`() {
+        assertTrue(VoiceSearch.matches(beatrice, "brit"))
+        assertTrue(VoiceSearch.matches(beatrice, "beat"))
+        // A substring search would match "rit" inside "british"; a word search should not.
+        assertFalse(VoiceSearch.matches(beatrice, "ritish"))
+    }
+
+    @Test fun `every term must match, and they need not be adjacent`() {
+        // "brit female" is the whole reason this is not a plain contains: those two words never
+        // appear next to each other in any voice.
+        assertTrue(VoiceSearch.matches(beatrice, "brit female"))
+        assertFalse(VoiceSearch.matches(beatrice, "brit male x"))
+    }
+
+    @Test fun `search is case-blind and an empty query matches everything`() {
+        assertTrue(VoiceSearch.matches(colton, "TEXAS"))
+        for (v in cat) assertTrue(VoiceSearch.matches(v, "   "))
+    }
+
+    @Test fun `search reaches the tags as well as the name`() {
+        assertTrue(VoiceSearch.matches(beatrice, "audiobook"))
+        assertTrue(VoiceSearch.matches(aadi, "podcast"))
+        assertFalse(VoiceSearch.matches(aadi, "audiobook"))
+    }
+
+    @Test fun `facet values are collected from the catalogue itself`() {
+        assertEquals(listOf("Female", "Male"), Facets.values(cat, Facets.GENDER))
+        assertEquals(listOf("English", "Hindi"), Facets.values(cat, Facets.LANGUAGE))
+        assertTrue(Facets.values(cat, Facets.USE).contains("audiobook"))
+    }
+
+    @Test fun `within a facet the values are an OR`() {
+        val both = VoiceSearch.apply(cat, "", mapOf(Facets.GENDER to setOf("Male", "Female")), emptySet())
+        assertEquals(3, both.size)
+    }
+
+    @Test fun `across facets they are an AND`() {
+        val r = VoiceSearch.apply(
+            cat,
+            "",
+            mapOf(Facets.GENDER to setOf("Male"), Facets.LANGUAGE to setOf("English")),
+            emptySet(),
+        )
+        assertEquals(listOf("Colton Rivers"), r.map { it.name })
+    }
+
+    @Test fun `an empty filter set does not exclude anything`() {
+        assertEquals(3, VoiceSearch.apply(cat, "", mapOf(Facets.GENDER to emptySet()), emptySet()).size)
+    }
+
+    @Test fun `starred voices come first`() {
+        val r = VoiceSearch.apply(cat, "", emptyMap(), setOf(VoiceSearch.key(aadi)))
+        assertEquals("Aadi", r.first().name)
+    }
+
+    @Test fun `flagship voices come next, then alphabetical`() {
+        val r = VoiceSearch.apply(cat, "", emptyMap(), emptySet())
+        assertEquals(listOf("Beatrice", "Aadi", "Colton Rivers"), r.map { it.name })
+    }
+
+    @Test fun `the flagship set is the Speechify voices on the newest model`() {
+        assertTrue(beatrice.flagship)
+        assertFalse(aadi.flagship)
+        // Hume publishes no popularity or featured field at all, so nothing there is flagship.
+        assertFalse(colton.flagship)
+    }
+
+    @Test fun `a key is engine and id, because two providers use the same short names`() {
+        val same = VoiceInfo(Engines.HUME, "beatrice_32", "Beatrice")
+        assertNotEquals(VoiceSearch.key(beatrice), VoiceSearch.key(same))
+    }
+
+    @Test fun `a locale code becomes a language name so one facet is one facet`() {
+        // Hume says "English" and Speechify says "en-US". Filtering by English must find both.
+        assertEquals("English", Locales.name("en-US"))
+        assertEquals("English", Locales.name("en-GB"))
+        assertEquals("Hindi", Locales.name("hi-IN"))
+        assertEquals("Croatian", Locales.name("hr-HR"))
+    }
+
+    @Test fun `an unknown locale is passed through rather than blanked`() {
+        assertEquals("xx-YY", Locales.name("xx-YY"))
+        assertEquals("", Locales.name(""))
+    }
+
+    // ── ACTING DIRECTIONS ─────────────────────────────────────────
+
+    @Test fun `there are enough directions to be a starting point rather than a token gesture`() {
+        assertTrue(Emotions.ALL.size >= 30)
+        assertTrue(Emotions.GROUPS.size >= 6)
+    }
+
+    @Test fun `every direction is prose, because Hume reads it as prose`() {
+        for (d in Emotions.ALL) {
+            assertTrue("${d.label} is not a description", d.text.length > 8)
+            assertEquals(d.text, d.text.lowercase())
+            assertTrue(d.group.isNotBlank())
+        }
+    }
+
+    @Test fun `every direction is distinct`() {
+        assertEquals(Emotions.ALL.size, Emotions.ALL.map { it.text }.toSet().size)
+        assertEquals(Emotions.ALL.size, Emotions.ALL.map { it.label + it.group }.toSet().size)
+    }
+
+    @Test fun `directions belong to Hume alone`() {
+        assertTrue(Emotions.availableFor(Engines.HUME))
+        assertFalse(Emotions.availableFor(Engines.SPEECHIFY))
+    }
+
+    @Test fun `a group holds only its own directions`() {
+        for (g in Emotions.GROUPS) {
+            assertTrue(Emotions.of(g).isNotEmpty())
+            assertTrue(Emotions.of(g).all { it.group == g })
+        }
+    }
+
+    // ── THE WAVE COLOUR ─────────────────────────────────────────
+
+    @Test fun `a stored colour index outside the list falls back rather than crashing`() {
+        assertEquals(waveColour(0), waveColour(-1))
+        assertEquals(waveColour(WAVE_COLOURS.size - 1), waveColour(99))
+    }
+
+    @Test fun `no wave colour is the pale grey the transcript is written in`() {
+        // The whole reason for the setting: the wave was the same colour as the words on it.
+        assertTrue(WAVE_COLOURS.isNotEmpty())
+        assertEquals(0xFFE8A64B, WAVE_COLOURS.first().second)
+    }
+
     // ── WHICH KEYS THE APP NEEDS ────────────────────────────────────────
 
     @Test fun `the app names three providers and only three`() {

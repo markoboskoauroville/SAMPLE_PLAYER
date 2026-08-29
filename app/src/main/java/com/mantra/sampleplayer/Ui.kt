@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -71,6 +72,7 @@ fun Tile(
     recording: Boolean,
     looping: Boolean,
     waveform: FloatArray,
+    waveTint: Color = WAVE,
     modifier: Modifier = Modifier,
     onPress: () -> Unit,
     onLongPress: () -> Unit,
@@ -140,10 +142,15 @@ fun Tile(
                         val w = size.width / waveform.size
                         for (i in waveform.indices) {
                             val h = (waveform[i] * size.height).coerceAtLeast(1f)
+                            // CONTINUOUS, NOT A PICKET FENCE. The bars were drawn at seven
+                            // tenths of their slot, which left a black gap between every one of
+                            // them — at 32 slices that reads as a striped pattern rather than as
+                            // a shape, and at 128 it reads as a grey haze. Full width, and the
+                            // waveform is a waveform.
                             drawRect(
-                                color = if (recording) RECORDING_RED else WAVE,
+                                color = if (recording) RECORDING_RED else waveTint,
                                 topLeft = Offset(i * w, (size.height - h) / 2f),
-                                size = Size((w * 0.7f).coerceAtLeast(1f), h),
+                                size = Size(w.coerceAtLeast(1f), h),
                             )
                         }
                     }
@@ -269,6 +276,43 @@ fun ConfirmBar(question: String, onCancel: () -> Unit, onOk: () -> Unit) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button("Cancel", Modifier.weight(1f)) { onCancel() }
             Button("OK", Modifier.weight(1f), solid = true, accent = RECORDING_RED) { onOk() }
+        }
+    }
+}
+
+/**
+ * ONE CLOSE BUTTON, TOP RIGHT, ON EVERY SCREEN THAT IS NOT THE GRID.
+ *
+ * Back buttons were full width and there were two of them on the longer screens, which is two
+ * rows of glass spent on leaving. An X in the corner is where every other app on the phone puts
+ * it, it is always in the same place whatever the screen is, and it costs one square.
+ */
+@Composable
+fun ScreenHeader(title: String, onClose: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            title,
+            color = Color.White,
+            fontSize = 14.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.weight(1f))
+        Box(
+            Modifier
+                .size(38.dp)
+                .border(1.dp, Color(0xFF52525B))
+                .pointerInput(Unit) { detectTapGestures(onTap = { onClose() }) },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "\u00d7",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontFamily = FontFamily.Monospace,
+            )
         }
     }
 }

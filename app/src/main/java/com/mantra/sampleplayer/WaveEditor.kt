@@ -52,6 +52,7 @@ fun WaveEditor(
     slot: Slot,
     waveform: FloatArray,
     trim: Trim,
+    waveTint: Color,
     playhead: Float?,
     onTrim: (Trim) -> Unit,
     onPreview: () -> Unit,
@@ -84,13 +85,7 @@ fun WaveEditor(
             .safeDrawingPadding()
             .padding(horizontal = 10.dp),
     ) {
-        Text(
-            "Cell %02d — playback points".format(slot.index + 1),
-            color = Color.White,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(vertical = 10.dp),
-        )
+        ScreenHeader("Cell %02d — playback points".format(slot.index + 1), onBack)
 
         if (!Trim.editable(length)) {
             Text(
@@ -147,9 +142,9 @@ fun WaveEditor(
                             // the recording and it is still there to drag back to.
                             val inside = x >= inX && x <= outX
                             drawRect(
-                                color = if (inside) Color(0xFF94A3B8) else Color(0xFF3F3F46),
+                                color = if (inside) waveTint else Color(0xFF3F3F46),
                                 topLeft = Offset(x, (size.height - h) / 2f),
-                                size = Size((w * 0.7f).coerceAtLeast(1f), h),
+                                size = Size(w.coerceAtLeast(1f), h),
                             )
                         }
                     }
@@ -224,8 +219,5 @@ fun WaveEditor(
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(top = 6.dp),
         )
-
-        Spacer(Modifier.height(20.dp))
-        Button("Back", Modifier.fillMaxWidth()) { onBack() }
     }
 }

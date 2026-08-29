@@ -625,3 +625,25 @@ val WAVEFORM_SCALES = listOf(1, 2, 3, 4)
 const val WAVEFORM_BASE = 32
 
 fun waveformBuckets(scale: Int): Int = WAVEFORM_BASE * scale.coerceIn(1, WAVEFORM_SCALES.size)
+
+/**
+ * THE COLOUR OF THE WAVE.
+ *
+ * It was the same pale grey as the transcript that now sits on top of it, so the words were
+ * unreadable over the loud part of a take — white on white with a shape behind it. Amber is the
+ * default because it is the account's accent everywhere else and because nothing else in the app
+ * is that colour at that size.
+ *
+ * A choice rather than a decision: which colour reads best depends on the room and on the eye, and
+ * this one is being looked at by somebody with low vision for hours at a time.
+ */
+val WAVE_COLOURS: List<Pair<String, Long>> = listOf(
+    "Amber" to 0xFFE8A64B,
+    "Yellow" to 0xFFFDE047,
+    "Green" to 0xFF4ADE80,
+    "Cyan" to 0xFF22D3EE,
+    "Violet" to 0xFFA78BFA,
+    "Grey" to 0xFF94A3B8,
+)
+
+fun waveColour(index: Int): Long = WAVE_COLOURS[index.coerceIn(0, WAVE_COLOURS.size - 1)].second

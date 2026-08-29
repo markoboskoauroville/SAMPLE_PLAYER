@@ -67,6 +67,9 @@ settings_code = code_only(src["Settings.kt"])
 recorder_code = code_only(src["Recorder.kt"])
 tile_code = code_only(src["Ui.kt"])
 dsp_code = code_only(src["Dsp.kt"])
+catalogue_code = code_only(src["Catalogue.kt"])
+chooser_code = code_only(src["VoiceChooser.kt"])
+emotions_code = code_only(src["Emotions.kt"])
 
 # ── THE ORIGINAL RECORDING ────────────────────────────────────────────────────────────────────
 #
@@ -587,10 +590,12 @@ check(
     "OpenDocument()" in ui_code,
     "a text field on a phone is a keyboard, and this app is dictated",
 )
+# The paste box for KEYS is still gone; the one text field in the app is the voice search, which
+# is a filter over a list rather than a way to enter a secret.
 check(
-    "no paste box survives anywhere",
-    "BasicTextField" not in "".join(code_only(t) for t in src.values()),
-    "the one in settings was removed rather than left as a second way in",
+    "the only text field is the voice search",
+    "BasicTextField" not in settings_code and "BasicTextField" not in keysscreen_code,
+    "keys come from a file; a search box is a filter, not a way to type a secret",
 )
 check(
     "the key screen can test and delete",
@@ -661,15 +666,23 @@ check(
 # ── THE VOICE BUG, AND THE SHAPE THAT HID IT ──────────────────────────────
 looper_code = code_only(src["Looper.kt"])
 
+# THE WHOLE CATALOGUE NOW, not eight known names. 992 Speechify voices across five cursor pages
+# and 160 from Hume across two, parsed with org.json rather than by reading substrings — which is
+# how v6 shipped a voice list with no gender, no age and no accent on any of it.
 check(
-    "the Speechify seats carry the suffix the catalogue uses",
-    voices_code.count("_32\"") >= 8,
-    "v6 and v7 searched for bare names and matched nothing in a 992-voice catalogue",
+    "both catalogues are walked to the end",
+    "next_cursor" in catalogue_code and "total_pages" in catalogue_code,
+    "one Speechify call returns fifty names beginning with A and looks like the whole thing",
 )
 check(
-    "the seats are not fetched",
-    "SPEECHIFY_SEATS" in voices_code and "limit=200" not in voices_code,
-    "walking five pages to find eight known names is work that can fail, and it did",
+    "the catalogue is parsed rather than scraped out of the body",
+    "JSONObject" in catalogue_code and "Net.str(" not in catalogue_code,
+    "the tag block is nested arrays and a flat string reader cannot see it",
+)
+check(
+    "the model still follows the suffix",
+    'endsWith("_32")' in voices_code,
+    "simba-3.2 answers 400 for almost the whole catalogue",
 )
 check(
     "the model is derived from the id",
@@ -677,8 +690,8 @@ check(
     "simba-3.2 returns 400 for almost the whole catalogue",
 )
 check(
-    "a voice failure says why",
-    "Pair<List<Voice>, String>" in voices_code and "Providers.explain" in voices_code,
+    "a catalogue failure says why",
+    "Pair<List<VoiceInfo>, String>" in catalogue_code and "Providers.explain" in catalogue_code,
     "an empty list for every possible cause is a message that cannot be acted on",
 )
 check(
@@ -776,10 +789,20 @@ check(
     "arrives later" not in ui_code and "arrives with v" not in ui_code,
     "a button that announces a future version has to be pressed to find that out",
 )
+# ONE CLOSE BUTTON, TOP RIGHT, EVERYWHERE. Two full-width Back buttons on the longer screens was
+# two rows of glass spent on leaving.
 check(
-    "settings can be left from the top as well as the bottom",
-    settings_code.count('Button("Back"') == 2,
-    "the screen is longer than the phone and the way out was a scroll away",
+    "no screen carries a Back button any more",
+    'Button("Back"' not in "".join(code_only(t) for t in src.values()),
+    "an X in the corner is where every other app on the phone puts it",
+)
+check(
+    "every screen that is not the grid has the same header",
+    all(
+        "ScreenHeader(" in code_only(src[f])
+        for f in ["Settings.kt", "KeysScreen.kt", "SlotOptions.kt", "WaveEditor.kt", "VoiceChooser.kt"]
+    ),
+    "always in the same place whatever the screen is",
 )
 
 # ── TRANSCRIBE IS AN ACTION AND ALSO A STEP, THROUGH ONE PATH ──────────────────
@@ -885,6 +908,62 @@ check(
     "Looper.slot is a plain field and nothing would recompose on it",
 )
 
+# ── THE VOICE CHOOSER ───────────────────────────────────────────
+check(
+    "search and filtering are pure",
+    "object VoiceSearch" in catalogue_code and "fun apply(" in catalogue_code,
+    "1152 voices is the part that has to be right, and Test 1 can walk all of it",
+)
+check(
+    "the facet values come from the catalogue rather than a hard-coded list",
+    "fun values(voices: List<VoiceInfo>" in catalogue_code,
+    "a value either provider adds appears without anybody editing this app",
+)
+check(
+    "male and female are different colours",
+    "private val MALE" in chooser_code and "private val FEMALE" in chooser_code,
+    "at this size a glyph has to be read and a colour does not",
+)
+check(
+    "starred voices sort above everything",
+    "compareByDescending<VoiceInfo> { key(it) in starred }" in catalogue_code,
+    "a star is the only signal that came from this person rather than from a provider",
+)
+check(
+    "the preview says the voice's own name",
+    'This is ${v.name}.' in ui_code,
+    "auditioning ten voices on a long line was ten long waits and ten times the credit",
+)
+check(
+    "acting directions are offered for Hume and not for Speechify",
+    "fun availableFor(" in emotions_code and "Emotions.availableFor(engine)" in chooser_code,
+    "Speechify has no description field; offering the control would be a lie",
+)
+check(
+    "a direction is sent only when there is one",
+    'if (direction.isNotBlank())' in voices_code,
+    "an empty description is not neutral, it is a field asking to be interpreted",
+)
+
+# ── THE WAVE ────────────────────────────────────────────────────
+check(
+    "the waveform is continuous",
+    "w * 0.7f" not in tile_code and "w * 0.7f" not in editor_code,
+    "seven tenths of each slot left a black gap between every bar",
+)
+check(
+    "the wave colour is a setting",
+    "WAVE_COLOURS" in model_code and "waveColour(" in ui_code,
+    "the transcript sits on the wave, so a pale wave makes the words unreadable",
+)
+
+# ── CHANGED POINTS TAKE EFFECT WITHOUT STOPPING ──────────────────────────
+check(
+    "leaving the editor re-applies the points to whatever is sounding",
+    "val wasPlaying = playing == editing" in ui_code and "val wasLooping" in ui_code,
+    "otherwise the change just made is not the change being listened to",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -905,7 +984,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 170, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 190, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -917,7 +996,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 130:
+if len(checks_run) < 140:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

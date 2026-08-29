@@ -59,13 +59,7 @@ fun KeysScreen(
             .padding(horizontal = 10.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        Text(
-            "Keys",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(vertical = 10.dp),
-        )
+        ScreenHeader("Keys", onBack)
 
         // WHAT IS NEEDED, AT THE TOP OF THE SCREEN WHERE IT GETS FIXED. Settings says the same
         // thing; this is the place somebody is standing when they can do something about it.
@@ -156,9 +150,6 @@ fun KeysScreen(
                 }
             }
         }
-
-        Spacer(Modifier.height(20.dp))
-        Button("Back", Modifier.fillMaxWidth()) { onBack() }
         Spacer(Modifier.height(20.dp))
     }
 }

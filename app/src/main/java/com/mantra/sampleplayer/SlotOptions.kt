@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.sp
 fun SlotOptions(
     slot: Slot,
     stage: String,
-    voices: List<Voice>,
+    voiceCount: Int,
     engine: String?,
     canSpeechify: Boolean,
     canHume: Boolean,
@@ -49,8 +49,6 @@ fun SlotOptions(
     onLoop: () -> Unit,
     onTranscribe: () -> Unit,
     onEngine: (String) -> Unit,
-    onPreview: (Voice) -> Unit,
-    onUse: (Voice) -> Unit,
     onRevert: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -62,13 +60,7 @@ fun SlotOptions(
             .padding(horizontal = 10.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        Text(
-            "Cell %02d".format(slot.index + 1),
-            color = Color.White,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(vertical = 10.dp),
-        )
+        ScreenHeader("Cell %02d".format(slot.index + 1), onBack)
 
         if (slot.words.isNotBlank()) {
             Text(
@@ -89,6 +81,56 @@ fun SlotOptions(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
+
+        // ── TRANSCRIBE ───────────────────────────────────────────────────────────────────────
+        //
+        // ITS OWN ACTION NOW, NOT A SIDE EFFECT OF CHOOSING A VOICE. It still happens on the way
+        // to a voice when it has to, so nobody is made to do it twice — but asking for it
+        // directly is a different thing being asked for. What comes back is the title of the cell,
+        // in full: a cell called "Danas" tells you which cell it is, and a cell called "Danas je
+        // lijep dan" tells you what is in it.
+        Button("Transcribe this cell", Modifier.fillMaxWidth()) { onTranscribe() }
+        Text(
+            "The words become the title of the cell, exactly as spoken.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── LOOP ─────────────────────────────────────────────────────────────────────────────
+        Button(
+            label = if (slot.loop) "\u221e  Loop is on for this cell" else "Set this cell to loop",
+            modifier = Modifier.fillMaxWidth(),
+            solid = slot.loop,
+            accent = PLAY_AMBER,
+        ) { onLoop() }
+        Text(
+            "A flag, not a start button. A marked cell carries \u221e on the grid: in play mode " +
+                "one press starts it looping and the next press stops it. Held in memory and " +
+                "repeated with no gap at the join, between the playback points, and it loops " +
+                "your own recording rather than a generated voice.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── SAVE ─────────────────────────────────────────────────────────────────────────────
+        Button("Save this recording to a file", Modifier.fillMaxWidth()) { onSave() }
+        Text(
+            "The original WAV, untrimmed and exactly as recorded. Choose where it goes.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
 
         // ── TRANSCRIBE ───────────────────────────────────────────────────────────────────────
         //
@@ -185,21 +227,17 @@ fun SlotOptions(
 
         // ── THE VOICES ───────────────────────────────────────────────────────────────────────
         //
-        // A NAME IS NOT A CHOICE. Every voice can be heard before it is picked: Speechify publishes
-        // a preview clip, and Hume does not, so a Hume voice is auditioned by speaking THIS cell's
-        // own words in it — which is the better audition anyway, because the question was never
-        // what the voice sounds like, it was what this line sounds like in it.
-        if (voices.isNotEmpty()) {
-            Spacer(Modifier.height(10.dp))
-            for (v in voices) {
-                Row(
-                    Modifier.padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Button(v.name, Modifier.weight(1f)) { onPreview(v) }
-                    Button("Use", Modifier.height(42.dp).padding(0.dp)) { onUse(v) }
-                }
-            }
+        // A DOOR, NOT A LIST. Nine hundred and ninety-two Speechify voices and a hundred and sixty
+        // from Hume is not something to scroll inside a menu that also holds delete. The chooser
+        // is its own screen with search, facets and stars on it.
+        if (voiceCount > 0) {
+            Text(
+                "$voiceCount voices loaded",
+                color = Color(0xFF71717A),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(top = 6.dp),
+            )
         }
 
         if (hasGenerated) {
@@ -227,9 +265,6 @@ fun SlotOptions(
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(top = 4.dp),
         )
-
-        Spacer(Modifier.height(20.dp))
-        Button("Back", Modifier.fillMaxWidth()) { onBack() }
         Spacer(Modifier.height(20.dp))
     }
 }

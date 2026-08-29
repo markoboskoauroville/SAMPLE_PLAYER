@@ -15,6 +15,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -57,7 +61,24 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_WAVE, 1).coerceIn(1, WAVEFORM_SCALES.size)
         set(value) = sp.edit().putInt(KEY_WAVE, value.coerceIn(1, WAVEFORM_SCALES.size)).apply()
 
+    /** Which colour the wave is drawn in. */
+    var waveColourIndex: Int
+        get() = sp.getInt(KEY_WAVE_COLOUR, 0).coerceIn(0, WAVE_COLOURS.size - 1)
+        set(value) = sp.edit().putInt(KEY_WAVE_COLOUR, value.coerceIn(0, WAVE_COLOURS.size - 1)).apply()
+
+    /**
+     * Starred voices, as `engine/id`.
+     *
+     * A set in one preference rather than a row per voice: there are eleven hundred voices and a
+     * preferences file with a key for each one is a file nobody can read when something goes wrong.
+     */
+    var starredVoices: Set<String>
+        get() = sp.getStringSet(KEY_STARS, emptySet())?.toSet() ?: emptySet()
+        set(value) = sp.edit().putStringSet(KEY_STARS, value).apply()
+
     private companion object {
+        const val KEY_WAVE_COLOUR = "wave_colour"
+        const val KEY_STARS = "starred_voices"
         const val KEY_WAVE = "wave_scale"
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_SLOT_COUNT = "slot_count"
@@ -102,6 +123,7 @@ fun SettingsScreen(
     slotCount: Int,
     pageSpread: Int,
     waveScale: Int,
+    waveColour: Int,
     usage: Usage,
     keySummary: List<String>,
     keysHeld: Set<String>,
@@ -110,6 +132,7 @@ fun SettingsScreen(
     onSlotCount: (Int) -> Unit,
     onPageSpread: (Int) -> Unit,
     onWaveScale: (Int) -> Unit,
+    onWaveColour: (Int) -> Unit,
     onClearGenerated: () -> Unit,
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
@@ -123,17 +146,7 @@ fun SettingsScreen(
             .padding(horizontal = 10.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        // BACK AT BOTH ENDS. This screen is longer than the phone, so after scrolling to read
-        // about storage the way out is a scroll away in a direction there is no reason to go.
-        Spacer(Modifier.height(8.dp))
-        Button("Back", Modifier.fillMaxWidth()) { onBack() }
-        Text(
-            "Settings",
-            color = Color.White,
-            fontSize = 14.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(vertical = 10.dp),
-        )
+        ScreenHeader("Settings", onBack)
 
         // ── HOW MANY CELLS, AND OVER HOW MANY PAGES ──────────────────────────────────────────
         //
@@ -180,6 +193,30 @@ fun SettingsScreen(
             }
         }
         Note("${waveformBuckets(waveScale)} slices per cell. Higher is slower to open a page.")
+
+        Heading("WAVEFORM COLOUR")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            for ((i, pair) in WAVE_COLOURS.withIndex()) {
+                Box(
+                    Modifier
+                        .padding(end = 6.dp)
+                        .height(38.dp)
+                        .width(58.dp)
+                        .background(if (waveColour == i) Color(pair.second) else Color.Black)
+                        .border(1.dp, Color(pair.second))
+                        .pointerInput(i) { detectTapGestures(onTap = { onWaveColour(i) }) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        pair.first,
+                        color = if (waveColour == i) Color.Black else Color(pair.second),
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+        Note("The transcript is written over the wave, so a pale wave makes it unreadable.")
 
         // ── WHAT HAPPENS WHEN A SAMPLE ENDS ──────────────────────────────────────────────────
         Heading("WHEN A SAMPLE ENDS")
@@ -300,8 +337,6 @@ fun SettingsScreen(
         Button("Open accessibility settings", Modifier.fillMaxWidth()) { onPermissions() }
         Note("Find Sample Player in the list and turn it on. It stays on until you turn it off.")
 
-        Spacer(Modifier.height(20.dp))
-        Button("Back", Modifier.fillMaxWidth()) { onBack() }
         Spacer(Modifier.height(20.dp))
     }
 }

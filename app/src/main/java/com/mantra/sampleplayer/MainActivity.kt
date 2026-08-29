@@ -163,6 +163,11 @@ class MainActivity : ComponentActivity() {
         var slotCount by remember { mutableStateOf(prefs.slotCount) }
         var pageSpread by remember { mutableStateOf(prefs.pageSpread) }
         var waveScale by remember { mutableStateOf(prefs.waveScale) }
+        var waveColour by remember { mutableStateOf(prefs.waveColourIndex) }
+        var starred by remember { mutableStateOf(prefs.starredVoices) }
+        var chooserFor by remember { mutableStateOf<Int?>(null) }
+        var catalogue by remember { mutableStateOf(emptyList<VoiceInfo>()) }
+        var direction by remember { mutableStateOf("") }
         var project by remember { mutableStateOf(load(DEFAULT_PROJECT, slotCount)) }
 
         // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
@@ -189,7 +194,6 @@ class MainActivity : ComponentActivity() {
         var loopingSlot by remember { mutableStateOf(Looper.slot) }
         var stage by remember { mutableStateOf("") }
         var engine by remember { mutableStateOf<String?>(null) }
-        var voices by remember { mutableStateOf(emptyList<Voice>()) }
         var playMode by remember { mutableStateOf(prefs.playMode) }
         val layout = Grid.of(project.size, pageSpread)
         val pagerState = rememberPagerState(pageCount = { project.pages(pageSpread) })
@@ -237,6 +241,80 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val choosing = chooserFor
+        if (choosing != null) {
+            VoiceChooser(
+                engine = engine ?: Engines.SPEECHIFY,
+                voices = catalogue,
+                loading = stage,
+                starred = starred,
+                direction = direction,
+                onSearchChanged = { },
+                onStar = { v ->
+                    val k = VoiceSearch.key(v)
+                    starred = if (k in starred) starred - k else starred + k
+                    prefs.starredVoices = starred
+                },
+                onPreview = { v ->
+                    work({ stage = it }) {
+                        setStage("hearing ${v.name}…")
+                        // THE VOICE SAYS ITS OWN NAME. It used to speak the cell's transcript,
+                        // which made auditioning ten voices for a long line ten long waits and ten
+                        // times the credit. Two seconds is enough to judge a voice.
+                        val bytes = if (v.preview != null) {
+                            Net.bytes(v.preview)
+                        } else {
+                            Engines.speak(
+                                Voice(v.engine, v.id, v.name, v.model),
+                                "This is ${v.name}.",
+                                keys.ring(v.engine),
+                                direction,
+                            ).first
+                        }
+                        if (bytes == null) {
+                            setStage("could not hear ${v.name}")
+                        } else {
+                            val f = File(cacheDir, "preview.audio")
+                            f.writeBytes(bytes)
+                            runOnUiThread { stage = "" ; playFile(f) }
+                        }
+                    }
+                },
+                onDirection = { direction = it },
+                onUse = { v ->
+                    work({ stage = it }) {
+                        val words = project.slot(choosing).words
+                        if (words.isBlank()) {
+                            setStage("transcribe this cell first")
+                            return@work
+                        }
+                        setStage("generating ${v.name}…")
+                        val (bytes, why) = Engines.speak(
+                            Voice(v.engine, v.id, v.name, v.model),
+                            words,
+                            keys.ring(v.engine),
+                            direction,
+                        )
+                        if (bytes == null) {
+                            setStage(why)
+                            return@work
+                        }
+                        val out = Paths.generated(filesDir, project.id, choosing, v.engine)
+                        out.parentFile?.mkdirs()
+                        out.writeBytes(bytes)
+                        Words(this@MainActivity).setVoice(project.id, choosing, v.engine)
+                        runOnUiThread {
+                            project = load(project.id, slotCountNow())
+                            stage = "${v.name} saved. Your recording is untouched."
+                            chooserFor = null
+                        }
+                    }
+                },
+                onClose = { chooserFor = null },
+            )
+            return
+        }
+
         val editing = editorFor
         if (editing != null) {
             val slotNow = project.slot(editing)
@@ -247,6 +325,7 @@ class MainActivity : ComponentActivity() {
                 // the finest the setting allows: the cost that made this a setting is
                 // thirty cells at once, and here there is one.
                 waveform = waveformOf(project.id, editing, WAVEFORM_SCALES.last()),
+                waveTint = Color(waveColour(waveColour)),
                 trim = t,
                 playhead = if (playing == editing) fraction else null,
                 onTrim = {
@@ -259,11 +338,32 @@ class MainActivity : ComponentActivity() {
                     Words(this).setTrim(project.id, editing, Trim.NONE)
                 },
                 onBack = {
+                    // THE NEW POINTS TAKE EFFECT IMMEDIATELY, WITHOUT STOPPING.
+                    //
+                    // Closing the editor while the set is playing used to leave the old in and out
+                    // running until the person stopped and started again — which means the change
+                    // they just made was not the change they were listening to. If this cell is
+                    // the one sounding, playback restarts from the new in point; if a loop is
+                    // running on it, the loop is rebuilt from the new region. Everything else is
+                    // left alone.
+                    val wasPlaying = playing == editing
+                    val wasLooping = Looper.slot == editing
                     player?.let { runCatching { it.stop() }; it.release() }
                     player = null
                     playing = null
                     editorFor = null
                     project = load(project.id, slotCountNow())
+                    if (wasLooping) {
+                        Looper.stop()
+                        Looper.start(
+                            Paths.original(filesDir, project.id, editing),
+                            editing,
+                            Words(this@MainActivity).trim(project.id, editing),
+                        )
+                        loopingSlot = Looper.slot
+                    } else if (wasPlaying) {
+                        startPlaying(editing, project, playMode) { playing = it }
+                    }
                 },
             )
             return
@@ -330,7 +430,7 @@ class MainActivity : ComponentActivity() {
             SlotOptions(
                 slot = project.slot(openSlot),
                 stage = stage,
-                voices = voices,
+                voiceCount = catalogue.size,
                 engine = engine,
                 canSpeechify = keys.has(Engines.SPEECHIFY),
                 canHume = keys.has(Engines.HUME),
@@ -345,7 +445,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onEngine = { chosen ->
                     engine = chosen
-                    voices = emptyList()
+                    catalogue = emptyList()
                     // TRANSCRIBE ON THE WAY, NEVER AS A STEP. Nobody wants a transcript; they want
                     // a different voice, and the transcript is what the app needs to give them
                     // one. It happens here, with a line saying what is going on.
@@ -360,68 +460,25 @@ class MainActivity : ComponentActivity() {
                                     return@work
                                 }
                             }
-                            setStage("fetching voices…")
+                            setStage("fetching the ${chosen} catalogue…")
                             val ring = keys.ring(chosen)
                             val (list, why) = if (chosen == Engines.SPEECHIFY) {
-                                Engines.speechifyVoices(ring)
+                                Catalogue.speechify(ring)
                             } else {
-                                Engines.humeVoices(ring)
+                                Catalogue.hume(ring)
                             }
                             runOnUiThread {
-                                voices = list
+                                catalogue = list
                                 project = load(project.id, slotCountNow())
-                                // THE REASON, NOT JUST THE ABSENCE. v6 said "no voices came back"
-                                // whether the key was missing, Cloudflare had blocked it, the
-                                // account was throttled or the ids were simply wrong — which is
-                                // why the last bug had to be found from a desk instead of here.
+                                // THE REASON, NOT JUST THE ABSENCE.
                                 stage = why
+                                if (list.isNotEmpty()) {
+                                    chooserFor = openSlot
+                                    optionsFor = null
+                                }
                             }
                         },
                     )
-                },
-                onPreview = { v ->
-                    work({ stage = it }) {
-                        setStage("preparing ${v.name}…")
-                        val bytes = if (v.preview != null) {
-                            Net.bytes(v.preview)
-                        } else {
-                            val words = project.slot(openSlot).words.ifBlank { "This is my voice." }
-                            Engines.speak(v, words, keys.ring(v.engine)).first
-                        }
-                        if (bytes == null) {
-                            setStage("could not hear ${v.name}")
-                        } else {
-                            val f = File(cacheDir, "preview.audio")
-                            f.writeBytes(bytes)
-                            runOnUiThread { stage = "" ; playFile(f) }
-                        }
-                    }
-                },
-                onUse = { v ->
-                    work({ stage = it }) {
-                        val words = project.slot(openSlot).words
-                        if (words.isBlank()) {
-                            setStage("nothing transcribed yet")
-                            return@work
-                        }
-                        setStage("generating ${v.name}…")
-                        val (bytes, why) = Engines.speak(v, words, keys.ring(v.engine))
-                        if (bytes == null) {
-                            setStage(why)
-                            return@work
-                        }
-                        // BESIDE, NEVER ON TOP. The generated file has a different name in a
-                        // different directory from the recording, so no engine string and no loop
-                        // index can make one become the other.
-                        val out = Paths.generated(filesDir, project.id, openSlot, v.engine)
-                        out.parentFile?.mkdirs()
-                        out.writeBytes(bytes)
-                        Words(this@MainActivity).setVoice(project.id, openSlot, v.engine)
-                        runOnUiThread {
-                            project = load(project.id, slotCountNow())
-                            stage = "${v.name} saved. Your recording is untouched."
-                        }
-                    }
                 },
                 onRevert = {
                     // THE RECORDING WAS NEVER REPLACED. This does not restore anything; it stops
@@ -473,6 +530,7 @@ class MainActivity : ComponentActivity() {
                 slotCount = slotCount,
                 pageSpread = pageSpread,
                 waveScale = waveScale,
+                waveColour = waveColour,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
                 keysHeld = keys.all().map { it.providerId }.toSet(),
@@ -484,6 +542,10 @@ class MainActivity : ComponentActivity() {
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
+                },
+                onWaveColour = {
+                    waveColour = it
+                    prefs.waveColourIndex = it
                 },
                 onWaveScale = {
                     waveScale = it
@@ -579,6 +641,7 @@ class MainActivity : ComponentActivity() {
                         playhead = if (playing == slot.index) fraction else null,
                         recording = recordingSlot == slot.index,
                         looping = loopingSlot == slot.index,
+                        waveTint = Color(waveColour(waveColour)),
                         // While this tile is recording it draws the shape arriving, not the file
                         // on disk, which does not exist yet.
                         waveform = if (recordingSlot == slot.index) {
@@ -645,7 +708,7 @@ class MainActivity : ComponentActivity() {
                                     optionsFor = p.slot
                                     stage = ""
                                     engine = null
-                                    voices = emptyList()
+                                    catalogue = emptyList()
                                 }
                                 is Press.Refused -> message = p.why
                                 else -> Unit

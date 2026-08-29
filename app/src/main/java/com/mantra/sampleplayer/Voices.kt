@@ -110,86 +110,15 @@ object Engines {
     const val HUME = "hume"
 
     /**
-     * SPEECHIFY: THE EIGHT CURATED SEATS, AND THEY ARE NOT FETCHED.
+     * The eight Speechify seats, kept because the model rule depends on the suffix.
      *
-     * v6 AND v7 RETURNED NO VOICES AT ALL, and the reason is one character.
-     *
-     * The eight curated voices are `beatrice_32`, `imogen_32` and so on. I looked for `beatrice`.
-     * The catalogue does contain a bare `beatrice`… no it does not — it contains `edmund`,
-     * `dominic` and `harper` as bare ids and nothing else from the list, so the search matched
-     * nothing and the screen said "no voices came back". `MAHA_TRANSCRIBE_STREAMLIT`'s
-     * `ttt/providers/speechify.py` has had the right ids since 24.8.2026 and I did not read it
-     * until the app failed on the phone.
-     *
-     * SO THE LIST IS NOT FETCHED ANY MORE. It is the eight seats, written down, exactly as MAHA
-     * writes them down. Walking 992 voices across five pages to find eight known names is work
-     * that can fail, and it did.
-     *
-     * THE MODEL FOLLOWS THE ID. `simba-3.2` answers HTTP 400 for any voice whose id does not end
-     * `_32` — "the selected voice is not available for simba-3.2" — and that is almost the whole
-     * catalogue. The rule is the suffix, not a global default.
+     * The voice LIST moved to `Catalogue`, which walks both providers properly with a real JSON
+     * parser and keeps every facet they publish. What is left here is the one rule that belongs
+     * beside speaking rather than beside listing: `simba-3.2` answers HTTP 400 for any voice whose
+     * id does not end `_32`, and that is almost the whole 992-voice catalogue.
      */
-    private val SPEECHIFY_SEATS = listOf(
-        "beatrice_32" to "Beatrice",
-        "imogen_32" to "Imogen",
-        "harper_32" to "Harper",
-        "geffen_32" to "Geffen",
-        "edmund_32" to "Edmund",
-        "hugh_32" to "Hugh",
-        "dominic_32" to "Dominic",
-        "wyatt_32" to "Wyatt",
-    )
-
-    /** MAHA's `model_for`: the suffix decides, never a global setting. */
     fun modelFor(voiceId: String): String =
         if (voiceId.endsWith("_32")) "simba-3.2" else "simba-english"
-
-    fun speechifyVoices(ring: Ring): Pair<List<Voice>, String> {
-        if (ring.current() == null) return emptyList<Voice>() to "no Speechify key"
-        return SPEECHIFY_SEATS.map { (id, name) ->
-            Voice(SPEECHIFY, id, name, modelFor(id))
-        } to ""
-    }
-
-    /**
-     * HUME: FETCHED, BECAUSE THE ACCOUNT DECIDES WHAT IS IN IT.
-     *
-     * AND IT SAYS WHY WHEN IT FAILS. v6 returned an empty list for every possible reason — no key,
-     * a 403 from Cloudflare, a throttled account, a body that did not parse — and the screen said
-     * "no voices came back" for all of them. That is a message that cannot be acted on, and it is
-     * the reason this had to be debugged from a desk instead of from the phone.
-     */
-    fun humeVoices(ring: Ring): Pair<List<Voice>, String> {
-        val c = ring.current() ?: return emptyList<Voice>() to "no Hume key"
-        val r = Net.get(
-            "https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100",
-            mapOf("X-Hume-Api-Key" to c.key),
-        )
-        if (!r.ok) {
-            when (r.status) {
-                Status.REJECTED -> ring.condemn(c)
-                Status.LIMITED -> ring.rest(c, 60_000)
-                else -> Unit
-            }
-            return emptyList<Voice>() to "Hume: ${Providers.explain(r.code, r.body)} (${r.code})"
-        }
-        val out = ArrayList<Voice>()
-        var from = 0
-        for (unused in 0 until MAX_VOICES) {
-            val at = r.body.indexOf("\"id\":", from)
-            if (at < 0) break
-            val chunk = r.body.substring(at, minOf(r.body.length, at + 1200))
-            val id = Net.str(chunk, "id")
-            val name = Net.str(chunk, "name")
-            if (id != null && name != null) out.add(Voice(HUME, id, name))
-            from = at + 5
-        }
-        val list = out.distinctBy { it.id }
-        // Hume publishes no preview clips, so a voice is heard by speaking THIS cell's own words
-        // in it. That is the better audition anyway: the question is not what the voice sounds
-        // like, it is what this line sounds like in it.
-        return list to if (list.isEmpty()) "Hume returned 200 but no voices" else ""
-    }
 
     /**
      * Speak [text] in [voice], returning audio bytes, or null with a reason.
@@ -207,7 +136,12 @@ object Engines {
      * HUME PACES AT ABOUT TWELVE SECONDS. A faster call returns 429, which is valid and throttled
      * and rests the account rather than condemning it.
      */
-    fun speak(voice: Voice, text: String, ring: Ring): Pair<ByteArray?, String> {
+    fun speak(
+        voice: Voice,
+        text: String,
+        ring: Ring,
+        direction: String = "",
+    ): Pair<ByteArray?, String> {
         var lastWhy = "no ${voice.engine} key"
         // Bounded by the size of the ring: every pass either succeeds, returns, or buries one
         // credential, so it cannot walk for ever.
@@ -223,8 +157,22 @@ object Engines {
                 HUME -> Net.postJson(
                     "https://api.hume.ai/v0/tts",
                     mapOf("X-Hume-Api-Key" to c.key),
-                    """{"utterances":[{"text":${quote(text)},"voice":{"id":"${voice.id}"}}],""" +
-                        """"format":{"type":"wav"},"num_generations":1}""",
+                    // THE DESCRIPTION IS THE ACTING DIRECTION and it is the reason Hume is here at
+                    // all. It is read as prose rather than matched against an enum, so it is only
+                    // sent when there is one: an empty description is not neutral, it is a field
+                    // asking to be interpreted.
+                    buildString {
+                        append("""{"utterances":[{"text":""")
+                        append(quote(text))
+                        append(""","voice":{"id":"""")
+                        append(voice.id)
+                        append(""""}""")
+                        if (direction.isNotBlank()) {
+                            append(""","description":""")
+                            append(quote(direction))
+                        }
+                        append("""}],"format":{"type":"wav"},"num_generations":1}""")
+                    },
                 )
                 else -> return null to "unknown engine"
             }
