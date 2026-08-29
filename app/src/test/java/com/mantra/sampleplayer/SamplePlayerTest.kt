@@ -34,9 +34,25 @@ class SamplePlayerTest {
         assertEquals(Press.StartRecording(3), Gesture.press(Mode.STOPPED, filled(), 3))
     }
 
-    @Test fun `stopped records even into a slot that already has audio`() {
-        // Deliberate: re-recording is allowed. The interface warns; the rule does not refuse.
-        assertEquals(Press.StartRecording(3), Gesture.press(Mode.STOPPED, filled(3), 3))
+    @Test fun `stopped on an OCCUPIED slot asks before recording`() {
+        // It used to return StartRecording here and the take was gone on one tap of one small
+        // tile in a grid of thirty. The confirmation is decided in the rule, not in the screen,
+        // so there is no path to a recording that skipped it.
+        assertEquals(Press.ConfirmOverwrite(3), Gesture.press(Mode.STOPPED, filled(3), 3))
+    }
+
+    @Test fun `no mode returns StartRecording for a slot that already has a take`() {
+        val p = filled(3)
+        for (m in Mode.entries) {
+            val r = Gesture.press(m, p, 3, recordingSlot = if (m == Mode.RECORDING) 9 else null)
+            assertNotEquals("$m started recording over a take", Press.StartRecording(3), r)
+        }
+    }
+
+    @Test fun `an empty slot is not made to ask about nothing`() {
+        // An app that asks every time teaches you to press OK without reading, and then it is not
+        // a confirmation, it is a second tap.
+        assertEquals(Press.StartRecording(3), Gesture.press(Mode.STOPPED, filled(), 3))
     }
 
     @Test fun `playing means a press seeks and NEVER records`() {
@@ -142,6 +158,97 @@ class SamplePlayerTest {
     @Test fun `playing with no engine is always the original`() {
         val root = File("/tmp/x")
         assertEquals(Paths.original(root, "p", 1), Paths.playing(root, "p", 1, null))
+    }
+
+    // ── THE PLAYBACK POINTS ─────────────────────────────────────────
+
+    @Test fun `an untrimmed cell plays the whole recording`() {
+        assertEquals(5000, Trim.NONE.endOf(5000))
+        assertEquals(5000, Trim.NONE.durationMs(5000))
+        assertFalse(Trim.NONE.isSet(5000))
+    }
+
+    @Test fun `the out point defaults to the end rather than to zero`() {
+        // Stored as 0 when unset. Read as 0 it would play nothing at all, which is the shape of
+        // bug that looks like the audio is broken.
+        assertEquals(5000, Trim(inMs = 100).endOf(5000))
+    }
+
+    @Test fun `an out point past the end is treated as the end`() {
+        assertEquals(5000, Trim(0, 9999).endOf(5000))
+    }
+
+    @Test fun `the in point cannot pass the out point`() {
+        val t = Trim.withIn(Trim(0, 1000), 4000, 5000)
+        assertTrue("in landed at ${t.inMs}", t.inMs <= 1000 - Trim.MIN_MS)
+    }
+
+    @Test fun `the out point cannot pass the in point`() {
+        val t = Trim.withOut(Trim(2000, 5000), 100, 5000)
+        assertTrue("out landed at ${t.outMs}", t.outMs >= 2000 + Trim.MIN_MS)
+    }
+
+    @Test fun `the points stay inside the recording`() {
+        assertEquals(0, Trim.withIn(Trim.NONE, -5000, 5000).inMs)
+        assertEquals(5000, Trim.withOut(Trim.NONE, 99999, 5000).outMs)
+    }
+
+    @Test fun `a dragged pair always leaves something audible`() {
+        var t = Trim.NONE
+        for (ms in listOf(0, 4999, 2500, 4999, 1, 5000)) {
+            t = Trim.withIn(t, ms, 5000)
+            t = Trim.withOut(t, ms, 5000)
+            assertTrue("duration fell to ${t.durationMs(5000)}", t.durationMs(5000) >= 0)
+            assertTrue(t.inMs < t.endOf(5000))
+        }
+    }
+
+    @Test fun `a recording too short to trim says so instead of offering handles`() {
+        assertFalse(Trim.editable(Trim.MIN_MS))
+        assertTrue(Trim.editable(5000))
+    }
+
+    @Test fun `whole take puts the points back to the ends`() {
+        assertFalse(Trim.NONE.isSet(5000))
+        assertTrue(Trim(inMs = 200).isSet(5000))
+        assertTrue(Trim(outMs = 200).isSet(5000))
+    }
+
+    // ── TESTING A KEY ──────────────────────────────────────────────
+
+    @Test fun `every provider in the table has a url and headers`() {
+        assertTrue(Providers.ALL.size >= 9)
+        for (p in Providers.ALL) {
+            assertTrue(p.testUrl("k").startsWith("https://"))
+            assertTrue(p.display.isNotBlank())
+        }
+    }
+
+    @Test fun `assemblyai is sent the raw key and never a bearer`() {
+        val h = Providers.byId("assemblyai")!!.headers("abc")
+        assertEquals("abc", h["authorization"])
+    }
+
+    @Test fun `speechify is tested on voices, because models 404s and reads as a dead key`() {
+        assertTrue(Providers.byId("speechify")!!.testUrl("k").contains("/v1/voices"))
+    }
+
+    @Test fun `sk underscore has a fallback chain, because two companies share it`() {
+        assertEquals(listOf("speechify", "elevenlabs"), Providers.FALLBACKS["speechify"])
+        assertEquals(listOf("elevenlabs", "speechify"), Providers.FALLBACKS["elevenlabs"])
+    }
+
+    @Test fun `cloudflare is explained as not being the key`() {
+        assertTrue(Providers.explain(403, "error code: 1010").contains("not by the key"))
+        assertFalse(Providers.explain(403, "forbidden").contains("not by the key"))
+    }
+
+    @Test fun `a throttled key is explained as still good`() {
+        assertTrue(Providers.explain(429, "").contains("good key"))
+    }
+
+    @Test fun `an unknown provider is null rather than a wrong guess`() {
+        assertNull(Providers.byId("not-a-provider"))
     }
 
     // ── THE PENDING TAKE ────────────────────────────────────────────

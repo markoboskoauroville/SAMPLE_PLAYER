@@ -4,7 +4,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -156,5 +159,37 @@ fun Button(
             fontSize = 13.sp,
             fontFamily = FontFamily.Monospace,
         )
+    }
+}
+
+/**
+ * OK OR CANCEL, IN A STRIP ABOVE THE CONTROLS.
+ *
+ * A bar rather than a dialog. A dialog dims the screen and takes the grid away, and the question
+ * is about a cell you can see: which one, and whether it already has something in it. Covering the
+ * answer to ask the question is the shape stopwatch v5 shipped and had to undo.
+ *
+ * It appears only when recording would destroy a take. An app that asks every time teaches you to
+ * press OK without reading, and then it is not a confirmation, it is a second tap.
+ */
+@Composable
+fun ConfirmBar(question: String, onCancel: () -> Unit, onOk: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(1.dp, RECORDING_RED)
+            .padding(8.dp),
+    ) {
+        Text(
+            question,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button("Cancel", Modifier.weight(1f)) { onCancel() }
+            Button("OK", Modifier.weight(1f), solid = true, accent = RECORDING_RED) { onOk() }
+        }
     }
 }

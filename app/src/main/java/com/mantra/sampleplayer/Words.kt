@@ -52,6 +52,16 @@ class Words(context: Context) {
 
     fun voice(id: String, slot: Int): String? = read(id, slot)["voice"]?.takeIf { it.isNotBlank() }
 
+    /** The in and out points. Two numbers; the recording itself is never altered by editing. */
+    fun trim(id: String, slot: Int): Trim {
+        val m = read(id, slot)
+        return Trim(m["in"]?.toIntOrNull() ?: 0, m["out"]?.toIntOrNull() ?: 0)
+    }
+
+    fun setTrim(id: String, slot: Int, t: Trim) {
+        write(id, slot, read(id, slot) + mapOf("in" to t.inMs.toString(), "out" to t.outMs.toString()))
+    }
+
     fun setVoice(id: String, slot: Int, engine: String?) {
         write(id, slot, read(id, slot) + ("voice" to (engine ?: "")))
     }

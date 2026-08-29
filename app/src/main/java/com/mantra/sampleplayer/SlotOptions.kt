@@ -43,6 +43,7 @@ fun SlotOptions(
     canHume: Boolean,
     hasGenerated: Boolean,
     onDelete: () -> Unit,
+    onEdit: () -> Unit,
     onEngine: (String) -> Unit,
     onPreview: (Voice) -> Unit,
     onUse: (Voice) -> Unit,
@@ -84,6 +85,17 @@ fun SlotOptions(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
+
+        // ── EDIT ─────────────────────────────────────────────────────────────────────────────
+        Button("Edit playback points", Modifier.fillMaxWidth()) { onEdit() }
+        Text(
+            "Drag where this cell starts and stops. Nothing is cut: the recording is untouched " +
+                "and the points go back to the ends whenever you want.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
 
         // ── CHANGE VOICE ─────────────────────────────────────────────────────────────────────
         Text(

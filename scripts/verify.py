@@ -517,6 +517,86 @@ check(
     "the recording was never replaced, so this only stops pointing at the generated file",
 )
 
+# ── RECORDING OVER A TAKE ASKS FIRST ───────────────────────────────────
+editor_code = code_only(src["WaveEditor.kt"])
+keysscreen_code = code_only(src["KeysScreen.kt"])
+providers_code = code_only(src["Providers.kt"])
+
+check(
+    "the confirmation is decided in the rule, not in the screen",
+    "ConfirmOverwrite" in model_code and "hasOriginal" in model_code,
+    "there is no path to a recording that skipped it",
+)
+check(
+    "the interface honours the confirmation",
+    "is Press.ConfirmOverwrite ->" in ui_code and "ConfirmBar(" in ui_code,
+    "OK or Cancel, and only when a take would be destroyed",
+)
+
+# ── THE EDITOR EDITS NOTHING ───────────────────────────────────────
+#
+# Two numbers beside the recording. The take is the thing that cannot be made again, and an editor
+# that cuts is one wrong drag from destroying the head of a phrase with no undo.
+check(
+    "the editor never writes audio",
+    "writeWav" not in editor_code and "delete()" not in editor_code,
+    "it moves two numbers and nothing else",
+)
+check(
+    "the points are clamped in one place",
+    "fun withIn(" in model_code and "fun withOut(" in model_code
+    and "coerceIn" in model_code,
+    "a rule enforced at one edge is a rule with a way round it",
+)
+check(
+    "playback applies the points",
+    "seekTo(t.inMs)" in ui_code and "stopAt(" in ui_code,
+    "nothing was cut, so skipping this would make the editor a screen that changes nothing",
+)
+check(
+    "there is a way back to the whole take",
+    "Trim.NONE" in ui_code and "Whole take" in editor_code,
+    "the points go back to the ends whenever he wants",
+)
+
+# ── KEYS COME FROM A FILE ────────────────────────────────────────
+check(
+    "keys are imported from a file, not typed",
+    "OpenDocument()" in ui_code,
+    "a text field on a phone is a keyboard, and this app is dictated",
+)
+check(
+    "no paste box survives anywhere",
+    "BasicTextField" not in "".join(code_only(t) for t in src.values()),
+    "the one in settings was removed rather than left as a second way in",
+)
+check(
+    "the key screen can test and delete",
+    "onTest" in keysscreen_code and "onDelete" in keysscreen_code
+    and "onTestAll" in keysscreen_code,
+    "the same functions Key_Tester has, on the same rows",
+)
+check(
+    "deleting a key keeps the shape of the note",
+    'replace(key, "DELETED")' in keys_code,
+    "cutting a line out shifts what the next key thinks its account is called",
+)
+check(
+    "a throttled key is never coloured as dead",
+    "Status.LIMITED -> PLAY_AMBER" in keysscreen_code,
+    "a ring that buries busy accounts eats itself in an afternoon",
+)
+check(
+    "the provider table is the ported one",
+    "object Providers" in providers_code and providers_code.count("Provider(") >= 10,
+    "every row is a URL somebody has already been wrong about once",
+)
+check(
+    "Hume is tested as a pair",
+    "oauth2-cc/token" in providers_code and "NO_WRAP" in providers_code,
+    "testing the api key alone proves nothing about the secret; the default Base64 wraps at 76",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -537,7 +617,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 100, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 120, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -549,7 +629,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 72:
+if len(checks_run) < 84:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

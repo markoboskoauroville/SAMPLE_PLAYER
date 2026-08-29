@@ -63,6 +63,16 @@ enum class Mode {
 /** What a press was decided to mean. Returned rather than performed, so a test can read it. */
 sealed interface Press {
     data class StartRecording(val slot: Int) : Press
+
+    /**
+     * The slot already holds a recording and the person pressed it in record mode.
+     *
+     * NOT `StartRecording`. Recording over a take destroys it, and a press is one finger on a
+     * small tile in a grid of thirty. The confirmation is the whole difference between a mistake
+     * that costs a tap and a mistake that costs a take, and it is decided here rather than in the
+     * interface so that Test 1 can prove it is never skipped.
+     */
+    data class ConfirmOverwrite(val slot: Int) : Press
     data class StopRecording(val slot: Int) : Press
     data class SeekTo(val slot: Int) : Press
     data class Clear(val slot: Int) : Press
@@ -173,7 +183,12 @@ object Gesture {
     fun press(mode: Mode, project: Project, slot: Int, recordingSlot: Int? = null): Press {
         if (slot !in project.slots.indices) return Press.Refused("no such slot")
         return when (mode) {
-            Mode.STOPPED -> Press.StartRecording(slot)
+            Mode.STOPPED ->
+                if (project.slot(slot).hasOriginal) {
+                    Press.ConfirmOverwrite(slot)
+                } else {
+                    Press.StartRecording(slot)
+                }
 
             Mode.RECORDING ->
                 if (slot == recordingSlot) {
@@ -401,5 +416,57 @@ object Paging {
     fun label(page: Int, total: Int, perPage: Int = PAGE_SIZE): String {
         val pages = pageCount(total, perPage)
         return if (pages <= 1) "" else "page ${page + 1} / $pages"
+    }
+}
+
+/**
+ * THE IN AND OUT POINTS, WHICH ARE THE ONLY EDIT THIS APP OFFERS.
+ *
+ * Not a trim, not a cut, not a fade. The recording on disk is never altered by editing: these are
+ * two numbers stored beside it saying where playback starts and where it stops.
+ *
+ * WHY NOTHING IS CUT. The take is the thing that cannot be made again. An editor that rewrites the
+ * file is one wrong drag away from destroying the head of a phrase, and there is no undo on a
+ * phone in a pocket. Two numbers can be dragged back to the ends at any time, for ever.
+ *
+ * WHAT IT IS FOR. The breath before the first word and the click of the second press are at the
+ * two ends of nearly every take. Being able to move past them is the difference between a set that
+ * plays as speech and a set that plays as thirty separate recordings.
+ */
+data class Trim(val inMs: Int = 0, val outMs: Int = 0) {
+
+    /** True when the points have been moved off the ends of the recording. */
+    fun isSet(lengthMs: Int): Boolean = inMs > 0 || (outMs in 1 until lengthMs)
+
+    /** Where playback stops, resolving the unset case to the end of the recording. */
+    fun endOf(lengthMs: Int): Int = if (outMs <= 0 || outMs > lengthMs) lengthMs else outMs
+
+    fun durationMs(lengthMs: Int): Int = (endOf(lengthMs) - inMs).coerceAtLeast(0)
+
+    companion object {
+        /** Below this a cell plays as a click rather than a word. */
+        const val MIN_MS = 120
+
+        val NONE = Trim()
+
+        /**
+         * Move a point, keeping both inside the recording and at least [MIN_MS] apart.
+         *
+         * The clamping is here rather than in the drag handler because a drag handler is one place
+         * and there turn out to be several: two handles, a reset, and whatever restores the values
+         * from disk. A rule enforced at one edge is a rule with a way round it.
+         */
+        fun withIn(t: Trim, ms: Int, lengthMs: Int): Trim {
+            val end = t.endOf(lengthMs)
+            return t.copy(inMs = ms.coerceIn(0, (end - MIN_MS).coerceAtLeast(0)))
+        }
+
+        fun withOut(t: Trim, ms: Int, lengthMs: Int): Trim {
+            val lowest = (t.inMs + MIN_MS).coerceAtMost(lengthMs)
+            return t.copy(outMs = ms.coerceIn(lowest, lengthMs))
+        }
+
+        /** A recording shorter than the minimum cannot be trimmed at all, and says so. */
+        fun editable(lengthMs: Int): Boolean = lengthMs >= MIN_MS * 2
     }
 }

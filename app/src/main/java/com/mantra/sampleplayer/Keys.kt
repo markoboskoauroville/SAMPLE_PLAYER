@@ -61,6 +61,35 @@ class Keys(context: Context) {
                 "$provider — ${found.size}" + if (labels.isEmpty()) "" else "  ($labels$tail)"
             }
 
+    /**
+     * Delete one key, the way `Key_Tester` does it: the token is replaced with the word DELETED
+     * and the note is left otherwise intact.
+     *
+     * WHY NOT REWRITE THE FILE WITHOUT IT. Because the note is not a list of keys, it is a note.
+     * It has account names, dates and comments in it, and the parser reads a key's label from the
+     * line above. Cutting a line out shifts what the next key thinks its own account is called.
+     * DELETED is a token the parser already skips, so the shape of the note survives the edit.
+     */
+    fun delete(key: String) {
+        if (!file.isFile) return
+        file.writeText(file.readText().replace(key, "DELETED"))
+    }
+
+    /** One row per credential, with never more of the key than [Credential.masked] shows. */
+    fun rows(): List<KeyRow> = all().map {
+        KeyRow(
+            key = it.key,
+            providerId = it.providerId,
+            label = it.label,
+            masked = Credential(it.key, it.secret, it.label).masked(),
+            paired = it.secret != null,
+        )
+    }
+
+    fun credentialFor(row: KeyRow): Credential? =
+        all().firstOrNull { it.key == row.key }
+            ?.let { Credential(it.key, it.secret, it.label) }
+
     fun forget() {
         file.delete()
     }

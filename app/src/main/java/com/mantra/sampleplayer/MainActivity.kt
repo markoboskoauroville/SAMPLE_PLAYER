@@ -64,6 +64,27 @@ class MainActivity : ComponentActivity() {
 
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    /**
+     * THE KEY NOTE ARRIVES AS A FILE, NOT AS A PASTE.
+     *
+     * A text field on a phone is a keyboard, and this app is dictated by somebody who does not
+     * type. The system picker opens wherever the note already lives — Drive, Downloads, a folder
+     * synced from the desktop — and hands back a stream.
+     *
+     * `OpenDocument` rather than `GetContent`, because the former returns a durable URI and the
+     * latter can hand back one that is gone by the time it is read.
+     */
+    private var onKeyFile: ((String) -> Unit)? = null
+
+    private val pickKeyFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        }.getOrNull()
+        // The URI, never the contents, and not even the URI if it might carry a query string.
+        onKeyFile?.invoke(text ?: "")
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         vault = Vault(filesDir)
@@ -134,6 +155,11 @@ class MainActivity : ComponentActivity() {
         var message by remember { mutableStateOf("") }
         var showSettings by remember { mutableStateOf(false) }
         var optionsFor by remember { mutableStateOf<Int?>(null) }
+        var editorFor by remember { mutableStateOf<Int?>(null) }
+        var showKeys by remember { mutableStateOf(false) }
+        var keyRows by remember { mutableStateOf(keys.rows()) }
+        var keyBusy by remember { mutableStateOf("") }
+        var confirmOverwrite by remember { mutableStateOf<Int?>(null) }
         var stage by remember { mutableStateOf("") }
         var engine by remember { mutableStateOf<String?>(null) }
         var voices by remember { mutableStateOf(emptyList<Voice>()) }
@@ -181,6 +207,91 @@ class MainActivity : ComponentActivity() {
                 fraction = (p.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
                 delay(60)
             }
+        }
+
+        val editing = editorFor
+        if (editing != null) {
+            val slotNow = project.slot(editing)
+            var t by remember(editing) { mutableStateOf(Words(this).trim(project.id, editing)) }
+            WaveEditor(
+                slot = slotNow,
+                waveform = waveformOf(project.id, editing),
+                trim = t,
+                playhead = if (playing == editing) fraction else null,
+                onTrim = {
+                    t = it
+                    Words(this).setTrim(project.id, editing, it)
+                },
+                onPreview = { startPlaying(editing, project, PlayMode.SINGLE) { playing = it } },
+                onReset = {
+                    t = Trim.NONE
+                    Words(this).setTrim(project.id, editing, Trim.NONE)
+                },
+                onBack = {
+                    player?.let { runCatching { it.stop() }; it.release() }
+                    player = null
+                    playing = null
+                    editorFor = null
+                    project = load(project.id, slotCountNow())
+                },
+            )
+            return
+        }
+
+        if (showKeys) {
+            KeysScreen(
+                rows = keyRows,
+                busy = keyBusy,
+                onImportFile = {
+                    onKeyFile = { text ->
+                        val added = keys.import(text)
+                        keyRows = keys.rows()
+                        keyBusy = if (added.isEmpty()) {
+                            "nothing key-shaped in that file"
+                        } else {
+                            added.entries.joinToString(", ") { e -> "${e.value} ${e.key}" } +
+                                " imported"
+                        }
+                    }
+                    // text/* rather than text/plain: a note exported from a phone is as likely to
+                    // arrive as octet-stream or as a .md, and a picker that shows nothing is
+                    // indistinguishable from a picker that is broken.
+                    pickKeyFile.launch(arrayOf("text/*", "application/octet-stream", "*/*"))
+                },
+                onTest = { row ->
+                    work({ keyBusy = it }) {
+                        setStage("testing ${row.masked}…")
+                        val c = keys.credentialFor(row)
+                        val r = if (c == null) null else Providers.test(c, row.providerId)
+                        runOnUiThread {
+                            keyRows = keyRows.map { if (it.key == row.key) it.copy(result = r) else it }
+                            keyBusy = ""
+                        }
+                    }
+                },
+                onTestAll = {
+                    work({ keyBusy = it }) {
+                        val rows = keys.rows()
+                        val done = ArrayList<KeyRow>(rows.size)
+                        for ((i, row) in rows.withIndex()) {
+                            setStage("testing ${i + 1} of ${rows.size}…")
+                            val c = keys.credentialFor(row)
+                            done.add(row.copy(result = if (c == null) null else Providers.test(c, row.providerId)))
+                        }
+                        runOnUiThread {
+                            keyRows = done
+                            keyBusy = ""
+                        }
+                    }
+                },
+                onDelete = { row ->
+                    keys.delete(row.key)
+                    keyRows = keys.rows()
+                    keyBusy = "deleted"
+                },
+                onBack = { showKeys = false },
+            )
+            return
         }
 
         val openSlot = optionsFor
@@ -290,6 +401,10 @@ class MainActivity : ComponentActivity() {
                     project = load(project.id, slotCountNow())
                     stage = "back to your own recording"
                 },
+                onEdit = {
+                    editorFor = openSlot
+                    optionsFor = null
+                },
                 onBack = { optionsFor = null },
             )
             return
@@ -304,14 +419,10 @@ class MainActivity : ComponentActivity() {
                 slotCount = slotCount,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
-                onImportKeys = { note ->
-                    val added = keys.import(note)
-                    message = if (added.isEmpty()) {
-                        "nothing key-shaped in that"
-                    } else {
-                        added.entries.joinToString(", ") { e -> "${e.value} ${e.key}" } +
-                            " imported"
-                    }
+                onKeys = {
+                    keyRows = keys.rows()
+                    keyBusy = ""
+                    showKeys = true
                 },
                 onPlayMode = {
                     playMode = it
@@ -391,6 +502,10 @@ class MainActivity : ComponentActivity() {
                         },
                         onPress = {
                             when (val p = Gesture.press(mode, project, slot.index, recordingSlot)) {
+                                // RECORDING OVER A TAKE ASKS FIRST. One finger, one small tile
+                                // in a grid of thirty, and the thing on the other side of the
+                                // mistake cannot be made again.
+                                is Press.ConfirmOverwrite -> confirmOverwrite = p.slot
                                 is Press.StartRecording -> {
                                     if (!hasMic()) {
                                         askMic.launch(Manifest.permission.RECORD_AUDIO)
@@ -433,6 +548,28 @@ class MainActivity : ComponentActivity() {
                     )
                 }
               }
+            }
+
+            val overwrite = confirmOverwrite
+            if (overwrite != null) {
+                ConfirmBar(
+                    question = "Record over cell ${overwrite + 1}? The take there is deleted.",
+                    onCancel = { confirmOverwrite = null },
+                    onOk = {
+                        confirmOverwrite = null
+                        if (!hasMic()) {
+                            askMic.launch(Manifest.permission.RECORD_AUDIO)
+                        } else {
+                            beginRecording(overwrite) { loaded, said ->
+                                project = loaded
+                                recordingSlot = null
+                                message = said
+                            }
+                            recordingSlot = overwrite
+                            message = ""
+                        }
+                    },
+                )
             }
 
             Spacer(Modifier.height(4.dp))
@@ -478,9 +615,16 @@ class MainActivity : ComponentActivity() {
         player?.release()
         val f = Paths.playing(filesDir, project.id, slot, project.slot(slot).voice)
         if (!f.isFile) { onSlot(null); return }
+        // THE IN AND OUT POINTS ARE APPLIED HERE, AND ONLY HERE. Nothing was cut from the file,
+        // so if this is skipped the editor is a screen that changes nothing. The out point is a
+        // watched deadline rather than a seek, because MediaPlayer has no concept of stopping
+        // early: it plays to the end of the file unless something stops it.
+        val t = Words(this).trim(project.id, slot)
+        val lengthMs = project.slot(slot).lengthMs
         player = MediaPlayer().apply {
             setDataSource(f.absolutePath)
             prepare()
+            if (t.inMs > 0) seekTo(t.inMs)
             setOnCompletionListener {
                 val next = nextInPlayback(project, slot, mode)
                 if (next == null) onSlot(null) else startPlaying(next, project, mode, onSlot)
@@ -488,6 +632,53 @@ class MainActivity : ComponentActivity() {
             start()
         }
         onSlot(slot)
+        val end = t.endOf(lengthMs)
+        if (t.isSet(lengthMs)) stopAt(slot, end, project, mode, onSlot)
+    }
+
+    /**
+     * WATCH FOR THE OUT POINT AND STOP THERE.
+     *
+     * `MediaPlayer` has no concept of stopping early: it plays a file to its end. Since nothing is
+     * ever cut from the recording, the out point has to be enforced by watching the clock — which
+     * is why the editor could exist at all without touching the audio.
+     *
+     * The poll is generous at 40ms. A few tens of milliseconds past the point is inaudible; the
+     * thing that must not happen is running on into the click of the second press, and that is
+     * hundreds of milliseconds wide.
+     */
+    private fun stopAt(
+        slot: Int,
+        endMs: Int,
+        project: Project,
+        mode: PlayMode,
+        onSlot: (Int?) -> Unit,
+    ) {
+        val watched = player ?: return
+        Thread {
+            // A COUNTED LOOP, NOT `while (true)`. G5 refuses the second kind and is right to: a
+            // loop that ends because of a condition in the middle stops ending when somebody edits
+            // the middle. The ceiling is the recording's own length plus a second, so the watcher
+            // cannot outlive the thing it is watching even if every exit below is wrong.
+            val ticks = (endMs / POLL_MS) + 25
+            for (unused in 0..ticks) {
+                Thread.sleep(POLL_MS.toLong())
+                val p = player
+                if (p !== watched) return@Thread
+                val position = runCatching { p.currentPosition }.getOrNull() ?: return@Thread
+                if (!runCatching { p.isPlaying }.getOrDefault(false)) return@Thread
+                if (position < endMs) continue
+                runOnUiThread {
+                    if (player !== watched) return@runOnUiThread
+                    runCatching { watched.stop() }
+                    watched.release()
+                    player = null
+                    val next = nextInPlayback(project, slot, mode)
+                    if (next == null) onSlot(null) else startPlaying(next, project, mode, onSlot)
+                }
+                return@Thread
+            }
+        }.start()
     }
 
     private fun beginRecording(slot: Int, onDone: (Project, String) -> Unit) {
@@ -560,6 +751,9 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** How often the out point is checked. Tens of milliseconds late is inaudible. */
+        const val POLL_MS = 40
+
         const val DEFAULT_PROJECT = "project-01"
 
         /** Three across, ten down, which puts the whole set on one screen. */
