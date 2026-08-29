@@ -34,6 +34,21 @@ object Paths {
     fun original(root: File, id: String, slot: Int): File =
         File(slotDir(root, id, slot), ORIGINAL)
 
+    /**
+     * WHERE A TAKE IS WRITTEN WHILE IT IS STILL BEING MADE.
+     *
+     * A retake used to be written straight over `original.wav`, truncating it on the first byte.
+     * If the new take then failed the quality check the file was deleted, and the slot went from
+     * holding a good recording to holding nothing — a retake that goes wrong destroying the thing
+     * it was replacing.
+     *
+     * Baba's instruction was that re-recording deletes the old sample and accepts the new one, and
+     * it does. What it does not do is delete the old sample and accept NOTHING. The pending file
+     * becomes the original only once the take has been judged usable.
+     */
+    fun pending(root: File, id: String, slot: Int): File =
+        File(slotDir(root, id, slot), "pending.wav")
+
     fun generated(root: File, id: String, slot: Int, engine: String): File {
         require(engine.isNotBlank()) { "an engine with no name would collide with itself" }
         require(!engine.contains('/') && !engine.contains("..")) { "engine name is a path" }
