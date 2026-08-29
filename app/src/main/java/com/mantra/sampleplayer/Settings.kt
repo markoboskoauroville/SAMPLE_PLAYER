@@ -108,6 +108,10 @@ fun SettingsScreen(
             .padding(horizontal = 10.dp)
             .verticalScroll(rememberScrollState()),
     ) {
+        // BACK AT BOTH ENDS. This screen is longer than the phone, so after scrolling to read
+        // about storage the way out is a scroll away in a direction there is no reason to go.
+        Spacer(Modifier.height(8.dp))
+        Button("Back", Modifier.fillMaxWidth()) { onBack() }
         Text(
             "Settings",
             color = Color.White,

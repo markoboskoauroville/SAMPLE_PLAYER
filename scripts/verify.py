@@ -699,6 +699,67 @@ check(
     "the playback points are this app's opinion; the file is the take",
 )
 
+# ── THE RATE FOLLOWS THE PHONE AND THE FILE ──────────────────────────────
+check(
+    "the recorder asks the phone for a rate rather than assuming one",
+    "fun bestRate()" in recorder_code and "getMinBufferSize" in recorder_code,
+    "48k, then 44.1k, then 16k, mono, probed because a refusal records silence",
+)
+check(
+    "the rate is written into the file and read back out of it",
+    "fun rateOf(" in recorder_code and "writeWavHeader(raf, dataBytes: Long, sr: Int)" not in recorder_code,
+    "older 16k takes must still report their own length",
+)
+check(
+    "nothing computes a duration from a hard-coded rate",
+    "/ Dsp.SAMPLE_RATE" not in recorder_code,
+    "a length at the wrong rate is wrong by a factor of three with nothing on screen to say so",
+)
+check(
+    "the loop uses the rate of the file it loaded",
+    "Recorder.rateOf(wav)" in looper_code,
+    "a loop built at the wrong rate plays at the wrong pitch",
+)
+check(
+    "the quality check measures speech in time, not in frames",
+    "MIN_SPEECH_MS" in dsp_code and "MIN_FRAMES" not in dsp_code,
+    "a fixed frame count gets three times more permissive at 48 kHz",
+)
+
+# ── THE EDITOR HAS TWO HANDLES AND THEY LOOK DIFFERENT ──────────────────────
+#
+# Both were amber and three pixels wide, so with the out point at its default the red line sat
+# under the one-pixel border at the right edge and could not be seen. It was there and it was
+# working, and there was nothing on screen saying so, which is the same as missing.
+check(
+    "the out handle is a different colour from the in handle",
+    "drawRect(RECORDING_RED, Offset(outAt" in editor_code
+    and "drawRect(PLAY_AMBER, Offset(inAt" in editor_code,
+    "yellow in, red out",
+)
+check(
+    "neither handle can hide under an edge",
+    "coerceIn(0f, size.width - w)" in editor_code,
+    "both are pulled inside the box",
+)
+check(
+    "the colours are named on the screen",
+    "yellow = in" in editor_code and "red = out" in editor_code,
+    "a colour that has to be guessed is a colour nobody reads",
+)
+
+# ── NO CONTROL PROMISES A FUTURE VERSION ───────────────────────────────
+check(
+    "the dead buttons are gone",
+    "arrives later" not in ui_code and "arrives with v" not in ui_code,
+    "a button that announces a future version has to be pressed to find that out",
+)
+check(
+    "settings can be left from the top as well as the bottom",
+    settings_code.count('Button("Back"') == 2,
+    "the screen is longer than the phone and the way out was a scroll away",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -719,7 +780,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 140, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 145, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -731,7 +792,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 100:
+if len(checks_run) < 110:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

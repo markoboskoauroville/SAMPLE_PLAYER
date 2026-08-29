@@ -44,6 +44,8 @@ import androidx.compose.ui.unit.sp
  * the end. Those two are on nearly every take, and moving past them is the difference between a
  * set that plays as speech and a set that plays as thirty separate recordings.
  */
+private const val HANDLE_PX = 5f
+
 @Composable
 fun WaveEditor(
     slot: Slot,
@@ -58,6 +60,8 @@ fun WaveEditor(
     val length = slot.lengthMs
     var width by remember { mutableStateOf(1f) }
     var draggingIn by remember { mutableStateOf(true) }
+
+    // Wide enough to see and to put a finger near. Three pixels was neither.
 
     Column(
         Modifier
@@ -135,8 +139,25 @@ fun WaveEditor(
                             )
                         }
                     }
-                    drawRect(PLAY_AMBER, Offset(inX, 0f), Size(3f, size.height))
-                    drawRect(PLAY_AMBER, Offset(outX - 3f, 0f), Size(3f, size.height))
+                    // TWO HAIRLINES, TWO COLOURS. YELLOW IN, RED OUT.
+                    //
+                    // Both were amber and both were three pixels wide, which meant that with the
+                    // out point at its default — the end of the recording — the red line sat under
+                    // the one-pixel border at the right edge and could not be seen at all. It was
+                    // there and it was doing its job; there was simply nothing on screen saying
+                    // so, which is indistinguishable from a missing feature.
+                    //
+                    // So: different colours, wider, and both PULLED INSIDE the box so neither can
+                    // hide under an edge.
+                    val w = HANDLE_PX
+                    val inAt = inX.coerceIn(0f, size.width - w)
+                    val outAt = (outX - w).coerceIn(0f, size.width - w)
+                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(w, size.height))
+                    drawRect(RECORDING_RED, Offset(outAt, 0f), Size(w, size.height))
+                    // A cap at the top of each, so the two ends are tellable apart at a glance
+                    // even when the waveform behind them is busy.
+                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(w * 3, w * 3))
+                    drawRect(RECORDING_RED, Offset(outAt - w * 2, 0f), Size(w * 3, w * 3))
                     if (playhead != null) {
                         drawRect(
                             Color(0xFFFDE68A),
@@ -148,6 +169,21 @@ fun WaveEditor(
         )
 
         Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                "▌yellow = in",
+                color = PLAY_AMBER,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+            Text(
+                "▌red = out",
+                color = RECORDING_RED,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Spacer(Modifier.height(4.dp))
         Text(
             "in %.2fs   out %.2fs   plays %.2fs of %.2fs".format(
                 trim.inMs / 1000f,

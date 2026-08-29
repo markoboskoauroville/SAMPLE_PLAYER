@@ -45,7 +45,8 @@ object Looper {
         val samples = Recorder.read(wav)
         if (samples.isEmpty()) return "nothing to loop"
 
-        val rate = Dsp.SAMPLE_RATE
+        // THE FILE'S OWN RATE. A loop built at the wrong rate plays at the wrong pitch.
+        val rate = Recorder.rateOf(wav)
         val fromFrame = (trim.inMs.toLong() * rate / 1000L).toInt().coerceIn(0, samples.size - 1)
         val lengthMs = samples.size * 1000L / rate
         val toFrame = (trim.endOf(lengthMs.toInt()).toLong() * rate / 1000L)

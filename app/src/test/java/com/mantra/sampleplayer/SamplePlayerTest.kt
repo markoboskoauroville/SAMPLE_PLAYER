@@ -160,6 +160,78 @@ class SamplePlayerTest {
         assertEquals(Paths.original(root, "p", 1), Paths.playing(root, "p", 1, null))
     }
 
+    // ── THE RECORDING RATE ──────────────────────────────────────────
+
+    @Test fun `the best rate is asked for first and sixteen is the floor`() {
+        // Sixteen kilohertz was inherited from a stopwatch that used the microphone to hear the
+        // word start. Here the recordings are the work.
+        assertEquals(48_000, Recorder.RATES.first())
+        assertEquals(16_000, Recorder.RATES.last())
+        assertTrue(Recorder.RATES.contains(44_100))
+    }
+
+    @Test fun `the rates are offered in descending quality`() {
+        val r = Recorder.RATES.toList()
+        assertEquals(r.sortedDescending(), r)
+    }
+
+    @Test fun `a length is computed from the file's own rate, not from a constant`() {
+        // A file recorded before the app learned to ask the phone is still 16 kHz, and a length
+        // computed at 48 would be wrong by a factor of three with nothing on screen to say so.
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "a.wav")
+        // One second of 44.1 kHz mono: 44100 frames, two bytes each, plus a 44 byte header.
+        f.writeBytes(wavHeader(44_100, 44_100 * 2) + ByteArray(44_100 * 2))
+        assertEquals(44_100, Recorder.rateOf(f))
+        assertEquals(1_000, Recorder.lengthMs(f))
+        root.deleteRecursively()
+    }
+
+    @Test fun `a header claiming an absurd rate is not believed`() {
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "b.wav")
+        f.writeBytes(wavHeader(3, 100) + ByteArray(100))
+        assertEquals(Dsp.SAMPLE_RATE, Recorder.rateOf(f))
+        root.deleteRecursively()
+    }
+
+    @Test fun `a file too short to hold a header does not crash the reader`() {
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "c.wav")
+        f.writeBytes(ByteArray(10))
+        assertEquals(Dsp.SAMPLE_RATE, Recorder.rateOf(f))
+        assertEquals(0, Recorder.lengthMs(f))
+        root.deleteRecursively()
+    }
+
+    @Test fun `the speech minimum is a duration, so a better rate does not loosen it`() {
+        // It used to be a frame count. The analysis window is a fixed number of SAMPLES, so at
+        // 48 kHz twenty-five frames is 83ms rather than 250, and the check would have become
+        // three times more permissive the moment the recorder improved.
+        assertEquals(250, SampleCheck.MIN_SPEECH_MS)
+    }
+
+    private fun wavHeader(rate: Int, dataBytes: Int): ByteArray {
+        val h = ByteArray(44)
+        fun le32(at: Int, v: Int) {
+            h[at] = (v and 0xFF).toByte()
+            h[at + 1] = ((v shr 8) and 0xFF).toByte()
+            h[at + 2] = ((v shr 16) and 0xFF).toByte()
+            h[at + 3] = ((v shr 24) and 0xFF).toByte()
+        }
+        "RIFF".toByteArray().copyInto(h, 0)
+        le32(4, 36 + dataBytes)
+        "WAVEfmt ".toByteArray().copyInto(h, 8)
+        le32(16, 16)
+        h[20] = 1; h[22] = 1
+        le32(24, rate)
+        le32(28, rate * 2)
+        h[32] = 2; h[34] = 16
+        "data".toByteArray().copyInto(h, 36)
+        le32(40, dataBytes)
+        return h
+    }
+
     // ── THE PLAYBACK POINTS ─────────────────────────────────────────
 
     @Test fun `an untrimmed cell plays the whole recording`() {

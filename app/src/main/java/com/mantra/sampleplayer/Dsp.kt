@@ -253,13 +253,21 @@ enum class SampleQuality {
 
 object SampleCheck {
 
-    /** Below a quarter of a second of speech there is not enough to warp against. */
-    const val MIN_FRAMES = 25
+    /**
+     * A quarter of a second of speech, MEASURED IN TIME RATHER THAN IN FRAMES.
+     *
+     * It used to be a frame count, which was the same thing while everything recorded at 16 kHz.
+     * The analysis window is a fixed number of SAMPLES, so at 48 kHz a frame covers a third of the
+     * time it used to and twenty-five of them is 83 milliseconds. The check would have quietly
+     * become three times more permissive the moment the recorder got better, and the symptom
+     * would have been coughs accepted as takes.
+     */
+    const val MIN_SPEECH_MS = 250
 
     /** A tenth of the samples at the rail is not a loud voice, it is a broken recording. */
     const val CLIP_FRACTION = 0.10
 
-    fun assess(samples: ShortArray): SampleQuality {
+    fun assess(samples: ShortArray, rate: Int = Dsp.SAMPLE_RATE): SampleQuality {
         if (samples.isEmpty()) return SampleQuality.SILENT
 
         var clipped = 0
@@ -268,7 +276,8 @@ object SampleCheck {
 
         val frames = Dsp.features(samples)
         if (frames.isEmpty()) return SampleQuality.SILENT
-        if (frames.size < MIN_FRAMES) return SampleQuality.TOO_SHORT
+        val speechMs = frames.size.toLong() * Dsp.HOP * 1000L / rate.coerceAtLeast(1)
+        if (speechMs < MIN_SPEECH_MS) return SampleQuality.TOO_SHORT
         return SampleQuality.GOOD
     }
 

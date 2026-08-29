@@ -61,6 +61,43 @@ object Recorder {
     private val vu = Vu()
 
     /**
+     * THE BEST RATE THIS PHONE WILL GIVE, MONO.
+     *
+     * Sixteen kilohertz was inherited from the stopwatch, where the microphone existed to
+     * recognise the word "start" and nothing was ever listened to. Here the recordings are the
+     * work: they are transcribed, they are re-voiced, they are looped, and one day they are in a
+     * film. Sixteen kilohertz throws away everything above 8 kHz, which is most of what makes a
+     * consonant sound like that consonant.
+     *
+     * MONO ON PURPOSE, not as a compromise. One voice, one phone microphone, and a stereo file
+     * would be two copies of the same signal at twice the size.
+     *
+     * PROBED, NOT ASSUMED. `getMinBufferSize` returns an error for a rate the device will not
+     * take, and a phone that quietly refuses 48 kHz would otherwise produce a recorder that
+     * initialises and records nothing.
+     */
+    val RATES = intArrayOf(48_000, 44_100, 16_000)
+
+    @Volatile private var probed = 0
+
+    fun bestRate(): Int {
+        if (probed != 0) return probed
+        for (rate in RATES) {
+            val size = AudioRecord.getMinBufferSize(
+                rate,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT,
+            )
+            if (size > 0) {
+                probed = rate
+                return rate
+            }
+        }
+        probed = 16_000
+        return probed
+    }
+
+    /**
      * THE SILENCE CEILING LIVES IN [Ceiling], NOT HERE.
      *
      * It used to be four lines inside the reading thread below, where Test 1 could not reach it.
@@ -81,15 +118,16 @@ object Recorder {
         if (running) return
         target.parentFile?.mkdirs()
 
+        val rate = bestRate()
         val minBuf = AudioRecord.getMinBufferSize(
-            Dsp.SAMPLE_RATE,
+            rate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
         ).coerceAtLeast(4096)
 
         val rec = AudioRecord(
             MediaRecorder.AudioSource.MIC,
-            Dsp.SAMPLE_RATE,
+            rate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             minBuf * 4,
@@ -110,7 +148,7 @@ object Recorder {
         worker = thread(name = "sample-recorder") {
             val raf = RandomAccessFile(target, "rw")
             raf.setLength(0)
-            writeWavHeader(raf, 0)
+            writeWavHeader(raf, 0, rate)
 
             val buf = ShortArray(minBuf)
             val bytes = ByteArray(minBuf * 2)
@@ -157,7 +195,7 @@ object Recorder {
                     bytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
                     // Kept for the quality check. Sixteen kHz mono for ninety seconds is under
                     // three megabytes, which is small enough to hold and check before storing.
-                    if (collected.size < Dsp.SAMPLE_RATE * 120) collected.add(buf[i])
+                    if (collected.size < rate * 120) collected.add(buf[i])
                 }
                 raf.write(bytes, 0, n * 2)
                 written += n * 2L
@@ -165,7 +203,7 @@ object Recorder {
             rec.stop()
             rec.release()
 
-            writeWavHeader(raf, written)
+            writeWavHeader(raf, written, rate)
             raf.close()
 
                 _level.value = 0f
@@ -176,7 +214,7 @@ object Recorder {
             // JUDGE THE RECORDING BEFORE IT COUNTS AS ONE. A slot that fills with two seconds of
             // room tone looks completely successful: the tile is solid, the count is right, the
             // waveform has a shape, and the only symptom appears later in the transcription.
-            val quality = SampleCheck.assess(collected.toShortArray())
+            val quality = SampleCheck.assess(collected.toShortArray(), rate)
             if (quality != SampleQuality.GOOD) {
                 // The pending file goes, and whatever was in the slot before is still there.
                 // A retake that goes wrong must not destroy the take it was replacing.
@@ -196,7 +234,7 @@ object Recorder {
             // than once per playback.
             val raw = read(target)
             val loud = normalise(raw)
-            if (loud !== raw) writeWav(target, loud)
+            if (loud !== raw) writeWav(target, loud, rate)
 
             // PROMOTE. The take has been judged and levelled, so it becomes the recording. This is
             // the moment a retake replaces what was there, and it is the last thing that happens
@@ -218,9 +256,8 @@ object Recorder {
     val isRecording: Boolean get() = running
 
     /** Sixteen-bit mono PCM, sample rate from [Dsp], written twice: once empty, once with sizes. */
-    private fun writeWavHeader(raf: RandomAccessFile, dataBytes: Long) {
+    private fun writeWavHeader(raf: RandomAccessFile, dataBytes: Long, sr: Int) {
         raf.seek(0)
-        val sr = Dsp.SAMPLE_RATE
         val byteRate = sr * 2
         fun le32(v: Long) = byteArrayOf(
             (v and 0xFF).toByte(),
@@ -254,11 +291,11 @@ object Recorder {
      * rewriting a recording over itself leaves a corrupt file where a good one was, and this is
      * the one file in the app that cannot be made again.
      */
-    fun writeWav(target: File, samples: ShortArray) {
+    fun writeWav(target: File, samples: ShortArray, rate: Int) {
         val tmp = File(target.parentFile, target.name + ".tmp")
         RandomAccessFile(tmp, "rw").use { raf ->
             raf.setLength(0)
-            writeWavHeader(raf, samples.size * 2L)
+            writeWavHeader(raf, samples.size * 2L, rate)
             val bytes = ByteArray(samples.size * 2)
             for (i in samples.indices) {
                 val v = samples[i].toInt()
@@ -288,9 +325,27 @@ object Recorder {
         return out
     }
 
-    /** Length in milliseconds from the file size, without decoding it. */
+    /**
+     * THE RATE THE FILE WAS RECORDED AT, read from its own header.
+     *
+     * Not assumed. Files recorded before the app learned to ask the phone for a better rate are
+     * still 16 kHz, and a length or a loop computed against the wrong rate is wrong by a factor of
+     * three with nothing on screen to say so.
+     */
+    fun rateOf(file: File): Int {
+        if (!file.isFile || file.length() < 44) return Dsp.SAMPLE_RATE
+        val h = file.inputStream().use { it.readNBytes(44) }
+        if (h.size < 44) return Dsp.SAMPLE_RATE
+        val rate = (h[24].toInt() and 0xFF) or
+            ((h[25].toInt() and 0xFF) shl 8) or
+            ((h[26].toInt() and 0xFF) shl 16) or
+            ((h[27].toInt() and 0xFF) shl 24)
+        return if (rate in 8_000..192_000) rate else Dsp.SAMPLE_RATE
+    }
+
+    /** Length in milliseconds from the file size and its own rate, without decoding it. */
     fun lengthMs(file: File): Int {
         if (!file.isFile || file.length() <= 44) return 0
-        return (((file.length() - 44) / 2) * 1000L / Dsp.SAMPLE_RATE).toInt()
+        return (((file.length() - 44) / 2) * 1000L / rateOf(file)).toInt()
     }
 }

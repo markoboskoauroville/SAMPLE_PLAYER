@@ -629,8 +629,11 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Button("Seq", Modifier.width(58.dp)) { message = "Seq arrives later" }
-                Button("Voice", Modifier.width(66.dp)) { message = "Voice arrives later" }
+                // Seq and Voice used to sit here and did nothing but print a promise. A
+                // control that announces a future version is a control that has to be pressed to
+                // find that out, and it was taking a third of the row. Changing a voice lives on
+                // the cell it belongs to, reached by a long press; there is nothing on the main
+                // screen that needs a global voice button.
                 Button(
                     label = if (armed == Mode.PLAYING) "PLAY" else "REC",
                     modifier = Modifier.weight(1f),
