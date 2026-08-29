@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sample Player</string>
+    <string name="accessibility_description">Draws the recording hairline across the top of the screen and the advance triangle under the camera, so a sample can be recorded and advanced without leaving the app you are reading from. It does not read the screen.</string>
+</resources>

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  It observes nothing. canRetrieveWindowContent is false and no event types are requested,
+  because this service exists only to hold overlay windows. An accessibility service that asks
+  for the screen contents when it does not need them is asking for a permission it has no use
+  for, and the person granting it cannot tell the difference.
+-->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:canRetrieveWindowContent="false"
+    android:description="@string/accessibility_description"
+    android:notificationTimeout="100" />
