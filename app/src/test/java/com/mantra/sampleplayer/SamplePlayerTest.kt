@@ -255,12 +255,19 @@ class SamplePlayerTest {
 
     @Test fun `speech resets the ceiling, so a long pause mid-phrase is safe`() {
         // A slot left open by mistake must end itself. A person thinking mid-sentence must not.
-        val c = Ceiling(afterMs = 1_000L)
+        //
+        // EVERY TIME HERE IS DERIVED FROM THE LIMIT RATHER THAN TYPED. This test was written twice
+        // with the wrong number, both times by counting the quiet from the speech instead of from
+        // the moment the level fell again. Arithmetic in a test is code, and it went wrong exactly
+        // where the code it was checking could have.
+        val limit = 1_000L
+        val c = Ceiling(afterMs = limit)
         assertFalse(c.exceeded(0.05f, 100))
-        assertFalse(c.exceeded(0.90f, 900))
-        assertFalse(c.exceeded(0.05f, 1_500))
-        assertFalse(c.exceeded(0.05f, 1_899))
-        assertTrue(c.exceeded(0.05f, 1_900))
+        assertFalse("speech must clear the count", c.exceeded(0.90f, 900))
+        val wentQuiet = 1_500L
+        assertFalse(c.exceeded(0.05f, wentQuiet))
+        assertFalse(c.exceeded(0.05f, wentQuiet + limit - 1))
+        assertTrue(c.exceeded(0.05f, wentQuiet + limit))
     }
 
     @Test fun `the default ceiling is a guard and not an endpointer`() {
