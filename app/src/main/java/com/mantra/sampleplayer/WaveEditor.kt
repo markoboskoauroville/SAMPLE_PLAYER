@@ -57,6 +57,7 @@ fun WaveEditor(
 ) {
     val length = slot.lengthMs
     var width by remember { mutableStateOf(1f) }
+    var draggingIn by remember { mutableStateOf(true) }
 
     Column(
         Modifier
@@ -90,15 +91,22 @@ fun WaveEditor(
                 .height(160.dp)
                 .border(1.dp, Color(0xFF3F3F46))
                 .pointerInput(length) {
-                    detectHorizontalDragGestures { change, _ ->
+                    detectHorizontalDragGestures(
+                        // THE SIDE YOU START FROM PICKS THE HANDLE, AND IT HOLDS FOR THE WHOLE
+                        // DRAG.
+                        //
+                        // v7 chose whichever handle was nearer to the finger, which sounded
+                        // helpful and is not: once the two points are close together the same
+                        // gesture grabs a different end depending on a few pixels, and once you
+                        // have dragged one point past the middle it starts answering to the wrong
+                        // side of the screen. Left half is the start, right half is the stop, and
+                        // it does not change under your finger halfway through.
+                        onDragStart = { start -> draggingIn = start.x < width / 2f },
+                    ) { change, _ ->
                         if (length <= 0 || width <= 1f) return@detectHorizontalDragGestures
                         val ms = ((change.position.x / width) * length).toInt()
-                        // WHICHEVER HANDLE IS NEARER. Two tiny targets on a phone is two targets
-                        // to miss; the nearer edge is what the finger meant.
-                        val end = trim.endOf(length)
-                        val nearIn = kotlin.math.abs(ms - trim.inMs) < kotlin.math.abs(ms - end)
                         onTrim(
-                            if (nearIn) {
+                            if (draggingIn) {
                                 Trim.withIn(trim, ms, length)
                             } else {
                                 Trim.withOut(trim, ms, length)
@@ -158,7 +166,8 @@ fun WaveEditor(
             Button("Whole take", Modifier.weight(1f)) { onReset() }
         }
         Text(
-            "Nothing is cut. These are two numbers beside the recording, and Whole take puts " +
+            "Drag from the left half to move the start, from the right half to move the stop. " +
+                "Nothing is cut: these are two numbers beside the recording, and Whole take puts " +
                 "them back to the ends.",
             color = Color(0xFF71717A),
             fontSize = 10.sp,

@@ -597,6 +597,45 @@ check(
     "testing the api key alone proves nothing about the secret; the default Base64 wraps at 76",
 )
 
+# ── THE EDITOR HANDLE IS CHOSEN BY THE SIDE, NOT BY THE DISTANCE ──────────────────
+#
+# v7 grabbed whichever point was nearer the finger. Once the two points are close together the same
+# gesture takes a different end depending on a few pixels, and once one point is past the middle it
+# answers to the wrong side of the screen. Left half is the start, right half is the stop, decided
+# when the drag begins and held for its whole length.
+check(
+    "the side the drag starts on picks the handle",
+    "onDragStart" in editor_code and "start.x < width / 2f" in editor_code,
+    "left half moves the start, right half moves the stop",
+)
+check(
+    "nothing chooses a handle by distance any more",
+    "abs(ms - trim.inMs)" not in editor_code,
+    "the handle must not change under the finger halfway through a drag",
+)
+check(
+    "the rule is written on the screen, not left to be discovered",
+    "left half" in editor_code and "right half" in editor_code,
+    "a gesture nobody is told about is a gesture nobody uses",
+)
+
+# ── WHAT THE APP NEEDS IS SAID WHERE IT CAN BE FIXED ─────────────────────────
+check(
+    "the needed keys are one pure list",
+    "object Needs" in model_code and "fun blocked(" in model_code,
+    "so both screens say the same thing and Test 1 can walk every combination",
+)
+check(
+    "settings says which keys the app wants",
+    "Needs.lines(keysHeld)" in settings_code,
+    "a list of what was imported never says what is missing",
+)
+check(
+    "the key screen says it too",
+    "Needs.lines(" in keysscreen_code,
+    "that is the screen somebody is standing on when they can do something about it",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -617,7 +656,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 120, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 130, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -629,7 +668,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 84:
+if len(checks_run) < 90:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

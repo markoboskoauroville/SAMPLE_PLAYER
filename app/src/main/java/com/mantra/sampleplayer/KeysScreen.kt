@@ -67,6 +67,16 @@ fun KeysScreen(
             modifier = Modifier.padding(vertical = 10.dp),
         )
 
+        // WHAT IS NEEDED, AT THE TOP OF THE SCREEN WHERE IT GETS FIXED. Settings says the same
+        // thing; this is the place somebody is standing when they can do something about it.
+        Text(
+            Needs.lines(rows.map { it.providerId }.toSet()).joinToString("\n"),
+            color = Color(0xFF94A3B8),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(bottom = 10.dp),
+        )
+
         // IMPORT IS A FILE, NOT A PASTE BOX. A text field on a phone is a keyboard, and this app
         // is dictated by somebody who does not type. The picker opens the phone's own file
         // chooser, so the note can come from Drive, Downloads, or anywhere else it already lives.

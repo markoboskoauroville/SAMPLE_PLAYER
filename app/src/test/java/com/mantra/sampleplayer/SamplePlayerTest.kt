@@ -214,6 +214,66 @@ class SamplePlayerTest {
         assertTrue(Trim(outMs = 200).isSet(5000))
     }
 
+    // ── WHICH KEYS THE APP NEEDS ────────────────────────────────────────
+
+    @Test fun `the app names three providers and only three`() {
+        assertEquals(3, Needs.ALL.size)
+        assertEquals(
+            setOf("assemblyai", "speechify", "hume"),
+            Needs.ALL.map { it.providerId }.toSet(),
+        )
+    }
+
+    @Test fun `transcription is required and the engines are not, individually`() {
+        assertTrue(Needs.ALL.single { it.providerId == "assemblyai" }.required)
+        assertFalse(Needs.ALL.single { it.providerId == "speechify" }.required)
+        assertFalse(Needs.ALL.single { it.providerId == "hume" }.required)
+    }
+
+    @Test fun `with nothing imported it says both halves are needed`() {
+        val m = Needs.blocked(emptySet())
+        assertTrue(m.contains("AssemblyAI"))
+        assertTrue(m.contains("Speechify") || m.contains("Hume"))
+    }
+
+    @Test fun `transcription alone is not enough to change a voice`() {
+        assertTrue(Needs.blocked(setOf("assemblyai")).contains("Speechify"))
+    }
+
+    @Test fun `an engine alone is not enough either, because there are no words`() {
+        assertTrue(Needs.blocked(setOf("hume")).contains("AssemblyAI"))
+    }
+
+    @Test fun `either engine plus transcription is enough`() {
+        // The engines are an OR. AssemblyAI is an AND, because without words there is nothing for
+        // either engine to say.
+        assertEquals("", Needs.blocked(setOf("assemblyai", "hume")))
+        assertEquals("", Needs.blocked(setOf("assemblyai", "speechify")))
+    }
+
+    @Test fun `keys the app never calls do not satisfy anything`() {
+        val m = Needs.blocked(setOf("github", "gemini", "anthropic", "groq"))
+        assertTrue(m.isNotEmpty())
+    }
+
+    @Test fun `every line says what the key is for and whether it is here`() {
+        val lines = Needs.lines(setOf("assemblyai"))
+        assertEquals(3, lines.size)
+        assertTrue(lines.single { it.startsWith("AssemblyAI") }.contains("[have]"))
+        assertTrue(lines.single { it.startsWith("Speechify") }.contains("[none]"))
+        assertTrue(lines.none { it.contains("MISSING") })
+    }
+
+    @Test fun `a missing required key is marked louder than a missing optional one`() {
+        val lines = Needs.lines(setOf("hume"))
+        assertTrue(lines.single { it.startsWith("AssemblyAI") }.contains("MISSING"))
+        assertTrue(lines.single { it.startsWith("Hume") }.contains("[have]"))
+    }
+
+    @Test fun `the Hume line says it needs both halves`() {
+        assertTrue(Needs.ALL.single { it.providerId == "hume" }.what.contains("secret"))
+    }
+
     // ── TESTING A KEY ──────────────────────────────────────────────
 
     @Test fun `every provider in the table has a url and headers`() {

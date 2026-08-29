@@ -91,6 +91,7 @@ fun SettingsScreen(
     slotCount: Int,
     usage: Usage,
     keySummary: List<String>,
+    keysHeld: Set<String>,
     onKeys: () -> Unit,
     onPlayMode: (PlayMode) -> Unit,
     onSlotCount: (Int) -> Unit,
@@ -190,8 +191,34 @@ fun SettingsScreen(
         // it belongs on its own screen, the way `Key_Tester` has it. The paste box that used to be
         // here is gone: a text field on a phone is a keyboard, and this app is dictated.
         Heading("KEYS")
+
+        // WHAT THE APP WANTS, BESIDE WHAT IT HAS. A list of whatever was imported says what you
+        // have and never what is missing, and then "why is Hume greyed out" is a question with no
+        // answer on the screen that caused it.
+        Text(
+            Needs.lines(keysHeld).joinToString("\n"),
+            color = Color(0xFF94A3B8),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        val blocked = Needs.blocked(keysHeld)
+        if (blocked.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                blocked,
+                color = PLAY_AMBER,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Note(
+            "Anything else in the note — GitHub, Gemini, Anthropic — is kept and can be tested, " +
+                "but this app never calls it.",
+        )
+        Spacer(Modifier.height(10.dp))
+
         if (keySummary.isEmpty()) {
-            Note("None yet.")
+            Note("Nothing imported yet.")
         } else {
             Text(
                 keySummary.joinToString("\n"),

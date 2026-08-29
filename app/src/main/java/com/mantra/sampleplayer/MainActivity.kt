@@ -419,6 +419,7 @@ class MainActivity : ComponentActivity() {
                 slotCount = slotCount,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
+                keysHeld = keys.all().map { it.providerId }.toSet(),
                 onKeys = {
                     keyRows = keys.rows()
                     keyBusy = ""

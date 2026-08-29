@@ -470,3 +470,61 @@ data class Trim(val inMs: Int = 0, val outMs: Int = 0) {
         fun editable(lengthMs: Int): Boolean = lengthMs >= MIN_MS * 2
     }
 }
+
+/**
+ * WHICH KEYS THIS APP ACTUALLY WANTS.
+ *
+ * A key screen that lists whatever was imported tells you what you have and not what is missing,
+ * and "why is Hume greyed out" is then a question with no answer on the screen that caused it.
+ *
+ * THREE PROVIDERS AND NOT ONE MORE. The note being imported has GitHub tokens, Gemini keys and
+ * Anthropic keys in it — they are carried, they are testable, and this app never calls them. Saying
+ * so is more useful than hiding them, because it stops the next session wondering which one drives
+ * what.
+ */
+data class Need(val providerId: String, val display: String, val what: String, val required: Boolean)
+
+object Needs {
+
+    val ALL: List<Need> = listOf(
+        Need(
+            "assemblyai", "AssemblyAI", "transcribes a cell so a voice has words to say",
+            required = true,
+        ),
+        Need(
+            "speechify", "Speechify", "one of the two voice engines — eight curated voices",
+            required = false,
+        ),
+        Need(
+            "hume", "Hume", "the other voice engine — needs the API key AND the secret key",
+            required = false,
+        ),
+    )
+
+    /**
+     * One line per need, saying what it is for and whether it is here.
+     *
+     * [held] is the set of provider ids actually imported.
+     */
+    fun lines(held: Set<String>): List<String> = ALL.map { need ->
+        val mark = if (need.providerId in held) "have" else if (need.required) "MISSING" else "none"
+        "${need.display} — ${need.what}  [$mark]"
+    }
+
+    /**
+     * What cannot be done yet, in one sentence, or empty when everything works.
+     *
+     * The two engines are an OR: either one makes voices possible. AssemblyAI is an AND, because
+     * without words there is nothing for either engine to say.
+     */
+    fun blocked(held: Set<String>): String {
+        val noWords = "assemblyai" !in held
+        val noVoice = "speechify" !in held && "hume" !in held
+        return when {
+            noWords && noVoice -> "Add AssemblyAI, and Speechify or Hume, to change any voice."
+            noWords -> "Add AssemblyAI: without it there are no words for a voice to say."
+            noVoice -> "Add Speechify or Hume: either one is enough to change a voice."
+            else -> ""
+        }
+    }
+}
