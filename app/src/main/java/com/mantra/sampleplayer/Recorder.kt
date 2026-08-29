@@ -68,7 +68,16 @@ object Recorder {
      */
 
     @SuppressLint("MissingPermission")
-    fun start(target: File, slotIndex: Int, onEnded: (SampleQuality) -> Unit) {
+    /**
+     * Record into [target]. When [promoteTo] is given, [target] is a scratch file and is moved on
+     * to [promoteTo] only if the take turns out to be usable.
+     */
+    fun start(
+        target: File,
+        slotIndex: Int,
+        promoteTo: File? = null,
+        onEnded: (SampleQuality) -> Unit,
+    ) {
         if (running) return
         target.parentFile?.mkdirs()
 
@@ -169,6 +178,8 @@ object Recorder {
             // waveform has a shape, and the only symptom appears later in the transcription.
             val quality = SampleCheck.assess(collected.toShortArray())
             if (quality != SampleQuality.GOOD) {
+                // The pending file goes, and whatever was in the slot before is still there.
+                // A retake that goes wrong must not destroy the take it was replacing.
                 target.delete()
                 onEnded(quality)
                 return@thread
@@ -186,6 +197,16 @@ object Recorder {
             val raw = read(target)
             val loud = normalise(raw)
             if (loud !== raw) writeWav(target, loud)
+
+            // PROMOTE. The take has been judged and levelled, so it becomes the recording. This is
+            // the moment a retake replaces what was there, and it is the last thing that happens
+            // rather than the first.
+            if (promoteTo != null) {
+                if (!target.renameTo(promoteTo)) {
+                    target.copyTo(promoteTo, overwrite = true)
+                    target.delete()
+                }
+            }
             onEnded(quality)
         }
     }

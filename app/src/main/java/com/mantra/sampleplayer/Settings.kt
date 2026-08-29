@@ -77,6 +77,7 @@ fun SettingsScreen(
     usage: Usage,
     onPlayMode: (PlayMode) -> Unit,
     onClearGenerated: () -> Unit,
+    onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -137,12 +138,38 @@ fun SettingsScreen(
         )
 
         // ── PERMISSIONS ──────────────────────────────────────────────────────────────────────
-        Heading("PERMISSIONS")
-        Button("Open accessibility settings", Modifier.fillMaxWidth()) { onPermissions() }
+        //
+        // TWO BUTTONS, IN THE ORDER THE DOORS HAVE TO BE OPENED. An accessibility service
+        // installed from an APK is a restricted setting: the switch on the accessibility screen is
+        // greyed out until it has been unlocked from the app's own page, and nothing on the greyed
+        // switch says so. Sending somebody to the second door first is sending them to a locked
+        // one.
+        Heading("PERMISSIONS — IN THIS ORDER")
         Note(
-            "The overlay needs this: the level line across the top and the triangle under the " +
-                "camera. It does not read the screen.",
+            "The overlay is what lets you record without leaving the app you are reading from: " +
+                "the level line across the top of every screen, and the triangle under the " +
+                "camera that stops this sample and starts the next one. Android calls that an " +
+                "accessibility service, and it will not switch on until it is unlocked below. " +
+                "It does not read your screen.",
         )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "1.",
+            color = LABEL,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Button("Open app properties", Modifier.fillMaxWidth()) { onAppProperties() }
+        Note("Then the three dots at the top right, then Allow restricted settings.")
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "2.",
+            color = LABEL,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Button("Open accessibility settings", Modifier.fillMaxWidth()) { onPermissions() }
+        Note("Find Sample Player in the list and turn it on. It stays on until you turn it off.")
 
         Spacer(Modifier.height(20.dp))
         Button("Back", Modifier.fillMaxWidth()) { onBack() }

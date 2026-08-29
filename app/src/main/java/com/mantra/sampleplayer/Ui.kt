@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -56,6 +58,8 @@ fun Tile(
     onPress: () -> Unit,
     onLongPress: () -> Unit,
 ) {
+    val press by rememberUpdatedState(onPress)
+    val longPress by rememberUpdatedState(onLongPress)
     val edge = when {
         recording -> RECORDING_RED
         slot.hasOriginal -> FILLED_EDGE
@@ -65,10 +69,23 @@ fun Tile(
         modifier
             .padding(2.dp)
             .border(1.dp, edge)
-            .pointerInput(slot.index) {
+            // WHY THIS IS NOT `pointerInput(slot.index) { ... onPress() }`.
+            //
+            // THE SECOND TAP DID NOTHING, and this was why. `pointerInput` restarts its block only
+            // when its key changes. Keyed on the slot number, the block is created once and holds
+            // the `onPress` closure from THAT composition for ever — the one that captured
+            // mode = STOPPED and recordingSlot = null. Tapping a recording tile therefore called
+            // the old lambda, which asked to start a recording, which the recorder ignored because
+            // one was already running. Nothing happened, nothing failed, and there was nothing to
+            // see. The state was correct the whole time and the gesture was reading a photograph
+            // of it.
+            //
+            // `rememberUpdatedState` keeps a live handle, so the block stays created once and the
+            // callback it calls is always the current one.
+            .pointerInput(Unit) {
                 detectTapGestures(
-                    onTap = { onPress() },
-                    onLongPress = { onLongPress() },
+                    onTap = { press() },
+                    onLongPress = { longPress() },
                 )
             }
             .padding(horizontal = 4.dp, vertical = 4.dp),

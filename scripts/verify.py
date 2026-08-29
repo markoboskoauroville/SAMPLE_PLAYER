@@ -310,6 +310,60 @@ check(
     "the only delete offered here goes through Vault.clearGenerated, which walks gen/ alone",
 )
 
+# ── THE GESTURE READS LIVE STATE, NOT A PHOTOGRAPH OF IT ───────────────────────
+#
+# v3 shipped with the second tap doing nothing. `pointerInput` restarts its block only when its
+# key changes, so keyed on the slot number it held the callback from the first composition for
+# ever — the one that captured mode = STOPPED. Tapping a recording tile asked to START a
+# recording, the recorder ignored it because one was running, and nothing happened at all. The
+# state was right the whole time; the gesture was reading a photograph of it.
+tile_code = code_only(src["Ui.kt"])
+check(
+    "the tile's gesture calls the current callback",
+    "rememberUpdatedState(onPress)" in tile_code,
+    "a live handle rather than a closure captured at first composition",
+)
+check(
+    "the tile's gesture block is not keyed on something that never changes with state",
+    "pointerInput(slot.index)" not in tile_code,
+    "keying on the slot number is what froze the callback",
+)
+
+# ── A RETAKE CANNOT DESTROY WHAT IT FAILED TO REPLACE ─────────────────────────
+check(
+    "a take is recorded to a pending file",
+    "Paths.pending(" in ui_code and "promoteTo" in ui_code,
+    "the recording becomes the original only after it has been judged usable",
+)
+check(
+    "the recorder promotes rather than writing over the original",
+    "promoteTo" in recorder_code and "renameTo(promoteTo)" in recorder_code,
+    "the swap is the last thing that happens, not the first",
+)
+check(
+    "a retake clears the audio generated from the take it replaced",
+    '"gen"' in ui_code,
+    "otherwise a voice says words that are no longer in the slot",
+)
+
+# ── THE PERMISSION DOORS ARE IN THE ORDER THEY OPEN ──────────────────────────
+check(
+    "the app's own settings page is offered as well",
+    "ACTION_APPLICATION_DETAILS_SETTINGS" in ui_code,
+    "an accessibility service from an APK is a restricted setting until unlocked from that page",
+)
+if "Open app properties" in settings_code and "Open accessibility settings" in settings_code:
+    door_order = settings_code.index("Open app properties") < settings_code.index(
+        "Open accessibility settings"
+    )
+else:
+    door_order = False
+check(
+    "app properties comes before accessibility",
+    door_order,
+    "sending somebody to the second door first is sending them to a locked one",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -331,7 +385,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 70, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 76, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -343,7 +397,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 39:
+if len(checks_run) < 46:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -38,6 +39,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import java.io.File
 
 /**
  * THE MAIN VIEW: TEN ROWS OF THREE.
@@ -119,7 +121,7 @@ class MainActivity : ComponentActivity() {
                 message = "slot $SLOTS is the last one"
             } else {
                 delay(150)
-                beginRecording(next) { project = it }
+                beginRecording(next) { loaded, _ -> project = loaded }
                 recordingSlot = next
             }
         }
@@ -155,6 +157,7 @@ class MainActivity : ComponentActivity() {
                     val n = vault.clearGenerated(project.id)
                     message = "cleared $n generated file(s)"
                 },
+                onAppProperties = { openAppProperties() },
                 onPermissions = { openAccessibilitySettings() },
                 onBack = { showSettings = false },
             )
@@ -200,7 +203,11 @@ class MainActivity : ComponentActivity() {
                                     if (!hasMic()) {
                                         askMic.launch(Manifest.permission.RECORD_AUDIO)
                                     } else {
-                                        beginRecording(p.slot) { project = it }
+                                        beginRecording(p.slot) { loaded, said ->
+                                            project = loaded
+                                            recordingSlot = null
+                                            message = said
+                                        }
                                         recordingSlot = p.slot
                                         message = ""
                                     }
@@ -286,10 +293,21 @@ class MainActivity : ComponentActivity() {
         onSlot(slot)
     }
 
-    private fun beginRecording(slot: Int, onDone: (Project) -> Unit) {
+    private fun beginRecording(slot: Int, onDone: (Project, String) -> Unit) {
         startForegroundService(Intent(this, RecordingService::class.java))
-        val target = Paths.original(filesDir, DEFAULT_PROJECT, slot)
-        Recorder.start(target, slot) { onDone(load(DEFAULT_PROJECT)) }
+        val pending = Paths.pending(filesDir, DEFAULT_PROJECT, slot)
+        val original = Paths.original(filesDir, DEFAULT_PROJECT, slot)
+        Recorder.start(pending, slot, promoteTo = original) { quality ->
+            if (quality == SampleQuality.GOOD) {
+                // A RETAKE REPLACES EVERYTHING DERIVED FROM THE TAKE IT REPLACED. The recording is
+                // new, so the transcript is about words that are no longer there and the generated
+                // voices are saying them. Keeping either is the answer whose wrongness does not
+                // show up until a lot of work has been done.
+                File(Paths.slotDir(filesDir, DEFAULT_PROJECT, slot), "gen")
+                    .listFiles()?.forEach { it.delete() }
+            }
+            onDone(load(DEFAULT_PROJECT), SampleCheck.describe(quality))
+        }
     }
 
     private fun waveformOf(id: String, slot: Int): FloatArray {
@@ -307,9 +325,30 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The direct link out to the accessibility page, so nobody has to find it by hand. */
-    @Suppress("unused")
     fun openAccessibilitySettings() {
         startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    /**
+     * THE APP'S OWN PAGE IN SYSTEM SETTINGS, AND IT HAS TO COME FIRST.
+     *
+     * On this phone an accessibility service installed from an APK cannot simply be switched on:
+     * Android calls it a restricted setting and the switch is greyed out with no explanation of
+     * what to do about it. The way through is this page, then the three dots at the top right,
+     * then "Allow restricted settings" — and only after that does the accessibility screen accept
+     * the toggle.
+     *
+     * That is three steps in two different places, none of which the app can perform on the
+     * person's behalf. What it can do is put the first door next to the second one, in the order
+     * they have to be opened.
+     */
+    fun openAppProperties() {
+        startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", packageName, null),
+            ),
+        )
     }
 
     companion object {

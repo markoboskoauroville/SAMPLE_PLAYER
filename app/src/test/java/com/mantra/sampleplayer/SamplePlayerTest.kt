@@ -142,6 +142,67 @@ class SamplePlayerTest {
         assertEquals(Paths.original(root, "p", 1), Paths.playing(root, "p", 1, null))
     }
 
+    // ── THE PENDING TAKE ────────────────────────────────────────────
+
+    @Test fun `a take in progress is never written over the recording it may replace`() {
+        val root = File("/tmp/x")
+        assertNotEquals(
+            Paths.original(root, "p", 4).path,
+            Paths.pending(root, "p", 4).path,
+        )
+    }
+
+    @Test fun `the pending file sits beside the original, in the same slot`() {
+        val root = File("/tmp/x")
+        assertEquals(
+            Paths.original(root, "p", 4).parentFile,
+            Paths.pending(root, "p", 4).parentFile,
+        )
+    }
+
+    @Test fun `a failed retake leaves the previous recording in place`() {
+        // The rule this whole path exists for. Baba asked that re-recording replace the old take,
+        // and it does. What it must never do is delete the old take and accept NOTHING.
+        val root = Files.createTempDirectory("sp").toFile()
+        val original = Paths.original(root, "p", 4)
+        original.parentFile?.mkdirs()
+        original.writeText("the good take")
+        val pending = Paths.pending(root, "p", 4)
+        pending.writeText("a cough")
+
+        // What the recorder does when the quality check refuses the take.
+        pending.delete()
+
+        assertTrue(original.isFile)
+        assertEquals("the good take", original.readText())
+        assertFalse(pending.exists())
+        root.deleteRecursively()
+    }
+
+    @Test fun `a good retake becomes the recording and the pending file is gone`() {
+        val root = Files.createTempDirectory("sp").toFile()
+        val original = Paths.original(root, "p", 4)
+        original.parentFile?.mkdirs()
+        original.writeText("the old take")
+        val pending = Paths.pending(root, "p", 4)
+        pending.writeText("the new take")
+
+        // What the recorder does when the take passes: promote.
+        assertTrue(pending.renameTo(original))
+
+        assertEquals("the new take", original.readText())
+        assertFalse(pending.exists())
+        root.deleteRecursively()
+    }
+
+    @Test fun `no engine name can collide with the pending file either`() {
+        val root = File("/tmp/x")
+        val pending = Paths.pending(root, "p", 7)
+        for (engine in listOf("pending", "pending.wav", "original", "edge")) {
+            assertNotEquals(pending.path, Paths.generated(root, "p", 7, engine).path)
+        }
+    }
+
     // ── THE SEQUENCE ──────────────────────────────────────────────────────────────────────────
 
     @Test fun `sequence is the filled slots in order when nothing is arranged`() {
