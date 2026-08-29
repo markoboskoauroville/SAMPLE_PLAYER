@@ -110,61 +110,69 @@ object Engines {
     const val HUME = "hume"
 
     /**
-     * SPEECHIFY: THE EIGHT CURATED VOICES, and the catalogue is not walked.
+     * SPEECHIFY: THE EIGHT CURATED SEATS, AND THEY ARE NOT FETCHED.
      *
-     * `/v1/voices` returns 985 voices, 50 at a time, alphabetically — so an unwalked call returns
-     * A names and an unfiltered walk returns a list nobody can choose from. These eight are the
-     * `simba-3.2` set that `MA_READER_SPEECHIFY` already uses, chosen by ear rather than by
-     * enumeration.
+     * v6 AND v7 RETURNED NO VOICES AT ALL, and the reason is one character.
      *
-     * The preview URLs are fetched live rather than hard-coded, because a CDN path is not ours.
+     * The eight curated voices are `beatrice_32`, `imogen_32` and so on. I looked for `beatrice`.
+     * The catalogue does contain a bare `beatrice`… no it does not — it contains `edmund`,
+     * `dominic` and `harper` as bare ids and nothing else from the list, so the search matched
+     * nothing and the screen said "no voices came back". `MAHA_TRANSCRIBE_STREAMLIT`'s
+     * `ttt/providers/speechify.py` has had the right ids since 24.8.2026 and I did not read it
+     * until the app failed on the phone.
+     *
+     * SO THE LIST IS NOT FETCHED ANY MORE. It is the eight seats, written down, exactly as MAHA
+     * writes them down. Walking 992 voices across five pages to find eight known names is work
+     * that can fail, and it did.
+     *
+     * THE MODEL FOLLOWS THE ID. `simba-3.2` answers HTTP 400 for any voice whose id does not end
+     * `_32` — "the selected voice is not available for simba-3.2" — and that is almost the whole
+     * catalogue. The rule is the suffix, not a global default.
      */
-    private val SPEECHIFY_SHORTLIST =
-        listOf("beatrice", "dominic", "edmund", "geffen", "harper", "hugh", "imogen", "wyatt")
+    private val SPEECHIFY_SEATS = listOf(
+        "beatrice_32" to "Beatrice",
+        "imogen_32" to "Imogen",
+        "harper_32" to "Harper",
+        "geffen_32" to "Geffen",
+        "edmund_32" to "Edmund",
+        "hugh_32" to "Hugh",
+        "dominic_32" to "Dominic",
+        "wyatt_32" to "Wyatt",
+    )
 
-    fun speechifyVoices(ring: Ring): List<Voice> {
-        val c = ring.current() ?: return emptyList()
-        val r = Net.get(
-            "https://api.sws.speechify.com/v1/voices?limit=200",
-            mapOf("Authorization" to "Bearer ${c.key}"),
-        )
-        if (!r.ok) {
-            if (r.status == Status.REJECTED) ring.condemn(c)
-            if (r.status == Status.LIMITED) ring.rest(c, 60_000)
-            return emptyList()
-        }
-        // Each voice object is one brace-balanced chunk. Splitting on `"id":` and reading forward
-        // is enough for four fields and avoids carrying a JSON parser for one screen.
-        val out = ArrayList<Voice>()
-        for (want in SPEECHIFY_SHORTLIST) {
-            val marker = "\"id\":\"$want\""
-            val at = r.body.indexOf(marker)
-            if (at < 0) continue
-            val chunk = r.body.substring(at, minOf(r.body.length, at + 4000))
-            val name = Net.str(chunk, "display_name") ?: want
-            val model = if (chunk.contains("simba-3.2")) "simba-3.2" else "simba-english"
-            out.add(Voice(SPEECHIFY, want, name, model, Net.str(chunk, "preview_audio")))
-        }
-        return out
+    /** MAHA's `model_for`: the suffix decides, never a global setting. */
+    fun modelFor(voiceId: String): String =
+        if (voiceId.endsWith("_32")) "simba-3.2" else "simba-english"
+
+    fun speechifyVoices(ring: Ring): Pair<List<Voice>, String> {
+        if (ring.current() == null) return emptyList<Voice>() to "no Speechify key"
+        return SPEECHIFY_SEATS.map { (id, name) ->
+            Voice(SPEECHIFY, id, name, modelFor(id))
+        } to ""
     }
 
-    fun humeVoices(ring: Ring): List<Voice> {
-        val c = ring.current() ?: return emptyList()
+    /**
+     * HUME: FETCHED, BECAUSE THE ACCOUNT DECIDES WHAT IS IN IT.
+     *
+     * AND IT SAYS WHY WHEN IT FAILS. v6 returned an empty list for every possible reason — no key,
+     * a 403 from Cloudflare, a throttled account, a body that did not parse — and the screen said
+     * "no voices came back" for all of them. That is a message that cannot be acted on, and it is
+     * the reason this had to be debugged from a desk instead of from the phone.
+     */
+    fun humeVoices(ring: Ring): Pair<List<Voice>, String> {
+        val c = ring.current() ?: return emptyList<Voice>() to "no Hume key"
         val r = Net.get(
             "https://api.hume.ai/v0/tts/voices?provider=HUME_AI&page_size=100",
             mapOf("X-Hume-Api-Key" to c.key),
         )
         if (!r.ok) {
-            if (r.status == Status.REJECTED) ring.condemn(c)
-            if (r.status == Status.LIMITED) ring.rest(c, 60_000)
-            return emptyList()
+            when (r.status) {
+                Status.REJECTED -> ring.condemn(c)
+                Status.LIMITED -> ring.rest(c, 60_000)
+                else -> Unit
+            }
+            return emptyList<Voice>() to "Hume: ${Providers.explain(r.code, r.body)} (${r.code})"
         }
-        // A BOUNDED LOOP, NOT `while (true)` WITH A BREAK IN IT.
-        //
-        // G5 of the delivery gate refused the build over this and was right to. The break made it
-        // terminate, but "it terminates because of a condition in the middle" is exactly the shape
-        // that stops terminating when somebody edits the middle. The ceiling is generous — no
-        // account has more than a few dozen voices — and it is a ceiling rather than a promise.
         val out = ArrayList<Voice>()
         var from = 0
         for (unused in 0 until MAX_VOICES) {
@@ -176,68 +184,73 @@ object Engines {
             if (id != null && name != null) out.add(Voice(HUME, id, name))
             from = at + 5
         }
-        // Hume publishes no preview clips, so a voice is heard by generating this cell's own words
-        // in it. That is a better audition anyway: the question is not what the voice sounds like,
-        // it is what THIS line sounds like in it.
-        return out.distinctBy { it.id }
+        val list = out.distinctBy { it.id }
+        // Hume publishes no preview clips, so a voice is heard by speaking THIS cell's own words
+        // in it. That is the better audition anyway: the question is not what the voice sounds
+        // like, it is what this line sounds like in it.
+        return list to if (list.isEmpty()) "Hume returned 200 but no voices" else ""
     }
 
     /**
-     * Speak [text] in [voice], returning WAV or MP3 bytes, or null with a reason.
+     * Speak [text] in [voice], returning audio bytes, or null with a reason.
      *
-     * HUME PACES AT ABOUT TWELVE SECONDS. Faster calls come back 429, which is valid and throttled
-     * and must never condemn the account.
+     * IT WALKS THE RING. This is the second half of the bug that made Hume useless: three of the
+     * twenty-one accounts on this key ring have an exhausted credit balance, and the first one is
+     * account one. v7 asked the ring for a credential, got the exhausted account, condemned it
+     * correctly — and then gave up and reported failure, so every attempt failed for ever while
+     * eighteen good accounts sat behind it.
+     *
+     * `provider-router.md` is explicit that a condemned key means RETRY THE SAME REQUEST on the
+     * next one. Measured on this ring: accounts 1, 2 and 3 return `400 E0300 zero_credits` and
+     * account 4 speaks.
+     *
+     * HUME PACES AT ABOUT TWELVE SECONDS. A faster call returns 429, which is valid and throttled
+     * and rests the account rather than condemning it.
      */
     fun speak(voice: Voice, text: String, ring: Ring): Pair<ByteArray?, String> {
-        val c = ring.current() ?: return null to "no ${voice.engine} key"
-        return when (voice.engine) {
-            SPEECHIFY -> {
-                val r = Net.postJson(
+        var lastWhy = "no ${voice.engine} key"
+        // Bounded by the size of the ring: every pass either succeeds, returns, or buries one
+        // credential, so it cannot walk for ever.
+        for (unused in 0 until ring.size.coerceAtLeast(1)) {
+            val c = ring.current() ?: return null to lastWhy
+            val r = when (voice.engine) {
+                SPEECHIFY -> Net.postJson(
                     "https://api.sws.speechify.com/v1/audio/speech",
                     mapOf("Authorization" to "Bearer ${c.key}"),
                     """{"input":${quote(text)},"voice_id":"${voice.id}",""" +
-                        """"audio_format":"mp3","model":"${voice.model}"}""",
+                        """"audio_format":"mp3","model":"${voice.model.ifBlank { modelFor(voice.id) }}"}""",
                 )
-                decode(r, "audio_data", c, ring)
-            }
-            HUME -> {
-                val r = Net.postJson(
+                HUME -> Net.postJson(
                     "https://api.hume.ai/v0/tts",
                     mapOf("X-Hume-Api-Key" to c.key),
                     """{"utterances":[{"text":${quote(text)},"voice":{"id":"${voice.id}"}}],""" +
                         """"format":{"type":"wav"},"num_generations":1}""",
                 )
-                decode(r, "audio", c, ring)
+                else -> return null to "unknown engine"
             }
-            else -> null to "unknown engine"
-        }
-    }
-
-    private fun decode(
-        r: Net.Reply,
-        field: String,
-        c: Credential,
-        ring: Ring,
-    ): Pair<ByteArray?, String> {
-        if (!r.ok) {
+            if (r.ok) {
+                val field = if (voice.engine == SPEECHIFY) "audio_data" else "audio"
+                val b64 = Net.str(r.body, field) ?: return null to "no audio in the reply"
+                return try {
+                    Base64.decode(b64, Base64.DEFAULT) to ""
+                } catch (e: IllegalArgumentException) {
+                    null to "the audio did not decode"
+                }
+            }
+            lastWhy = "${voice.engine}: ${Providers.explain(r.code, r.body)}"
             when (r.status) {
                 Status.LIMITED -> {
+                    // Alive, busy. Rested and the next account takes the call.
                     ring.rest(c, 15_000)
-                    return null to "busy, resting that account"
                 }
                 Status.REJECTED -> {
+                    // Out of credit, revoked, or wrong. Buried, AND THE REQUEST IS TRIED AGAIN.
                     ring.condemn(c)
-                    return null to "that account was refused"
                 }
-                else -> return null to "failed (${r.code})"
+                else -> return null to lastWhy
             }
         }
-        val b64 = Net.str(r.body, field) ?: return null to "no audio in the reply"
-        return try {
-            Base64.decode(b64, Base64.DEFAULT) to ""
-        } catch (e: IllegalArgumentException) {
-            null to "the audio did not decode"
-        }
+        return null to "$lastWhy — no account left to try"
     }
 
     /** JSON string escaping, because the text is a spoken phrase and will contain quotes. */

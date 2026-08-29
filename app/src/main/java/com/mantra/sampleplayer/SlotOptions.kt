@@ -42,8 +42,11 @@ fun SlotOptions(
     canSpeechify: Boolean,
     canHume: Boolean,
     hasGenerated: Boolean,
+    looping: Boolean,
     onDelete: () -> Unit,
     onEdit: () -> Unit,
+    onSave: () -> Unit,
+    onLoop: () -> Unit,
     onEngine: (String) -> Unit,
     onPreview: (Voice) -> Unit,
     onUse: (Voice) -> Unit,
@@ -85,6 +88,36 @@ fun SlotOptions(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
+
+        // ── LOOP ─────────────────────────────────────────────────────────────────────────────
+        Button(
+            label = if (looping) "Stop looping" else "Loop this cell",
+            modifier = Modifier.fillMaxWidth(),
+            solid = looping,
+            accent = PLAY_AMBER,
+        ) { onLoop() }
+        Text(
+            "Held in memory and repeated with no gap at the join, between the playback points. " +
+                "It loops your own recording, not a generated voice.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── SAVE ─────────────────────────────────────────────────────────────────────────────
+        Button("Save this recording to a file", Modifier.fillMaxWidth()) { onSave() }
+        Text(
+            "The original WAV, untrimmed and exactly as recorded. Choose where it goes.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
 
         // ── EDIT ─────────────────────────────────────────────────────────────────────────────
         Button("Edit playback points", Modifier.fillMaxWidth()) { onEdit() }

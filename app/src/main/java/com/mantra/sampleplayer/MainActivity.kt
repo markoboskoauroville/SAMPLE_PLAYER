@@ -76,6 +76,29 @@ class MainActivity : ComponentActivity() {
      */
     private var onKeyFile: ((String) -> Unit)? = null
 
+    private var pendingSave: java.io.File? = null
+
+    /**
+     * SAVE A TAKE WHEREVER HE WANTS IT.
+     *
+     * `CreateDocument` rather than writing into a folder the app picked: the phone's own chooser
+     * puts it in Drive, in Downloads, in a synced folder, wherever the rest of the work already
+     * lives. The app does not need storage permission to do this and does not ask for one.
+     *
+     * WHAT IS EXPORTED IS THE ORIGINAL, untrimmed and exactly as recorded. The playback points are
+     * this app's opinion about where the phrase starts; the file is the take.
+     */
+    private val saveSample = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/wav"),
+    ) { uri ->
+        val src = pendingSave
+        pendingSave = null
+        if (uri == null || src == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.openOutputStream(uri)?.use { out -> src.inputStream().use { it.copyTo(out) } }
+        }
+    }
+
     private val pickKeyFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         val text = runCatching {
@@ -95,6 +118,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        Looper.stop()
         player?.release()
         player = null
         super.onDestroy()
@@ -304,6 +328,7 @@ class MainActivity : ComponentActivity() {
                 canSpeechify = keys.has(Engines.SPEECHIFY),
                 canHume = keys.has(Engines.HUME),
                 hasGenerated = project.slot(openSlot).generated.isNotEmpty(),
+                looping = Looper.slot == openSlot,
                 onDelete = {
                     Paths.slotDir(filesDir, project.id, openSlot)
                         .walkTopDown().filter { it.isFile }.forEach { it.delete() }
@@ -336,7 +361,7 @@ class MainActivity : ComponentActivity() {
                             }
                             setStage("fetching voices…")
                             val ring = keys.ring(chosen)
-                            val list = if (chosen == Engines.SPEECHIFY) {
+                            val (list, why) = if (chosen == Engines.SPEECHIFY) {
                                 Engines.speechifyVoices(ring)
                             } else {
                                 Engines.humeVoices(ring)
@@ -344,7 +369,11 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread {
                                 voices = list
                                 project = load(project.id, slotCountNow())
-                                stage = if (list.isEmpty()) "no voices came back" else ""
+                                // THE REASON, NOT JUST THE ABSENCE. v6 said "no voices came back"
+                                // whether the key was missing, Cloudflare had blocked it, the
+                                // account was throttled or the ids were simply wrong — which is
+                                // why the last bug had to be found from a desk instead of here.
+                                stage = why
                             }
                         },
                     )
@@ -404,6 +433,28 @@ class MainActivity : ComponentActivity() {
                 onEdit = {
                     editorFor = openSlot
                     optionsFor = null
+                },
+                onSave = {
+                    pendingSave = Paths.original(filesDir, project.id, openSlot)
+                    saveSample.launch("${project.name}-%02d.wav".format(openSlot + 1))
+                },
+                onLoop = {
+                    if (Looper.slot == openSlot) {
+                        Looper.stop()
+                        stage = ""
+                    } else {
+                        // Stop ordinary playback first. Two things sounding at once is not a
+                        // feature, and the loop is the one that was just asked for.
+                        player?.let { runCatching { it.stop() }; it.release() }
+                        player = null
+                        playing = null
+                        val why = Looper.start(
+                            Paths.original(filesDir, project.id, openSlot),
+                            openSlot,
+                            Words(this@MainActivity).trim(project.id, openSlot),
+                        )
+                        stage = why.ifBlank { "looping" }
+                    }
                 },
                 onBack = { optionsFor = null },
             )

@@ -214,6 +214,71 @@ class SamplePlayerTest {
         assertTrue(Trim(outMs = 200).isSet(5000))
     }
 
+    // ── THE SPEECHIFY SEATS ─────────────────────────────────────────
+
+    @Test fun `the model follows the voice id, never a global setting`() {
+        // simba-3.2 answers HTTP 400 for any voice whose id does not end _32, and that is almost
+        // the whole 992-voice catalogue.
+        assertEquals("simba-3.2", Engines.modelFor("beatrice_32"))
+        assertEquals("simba-english", Engines.modelFor("beatrice"))
+        assertEquals("simba-english", Engines.modelFor("lesya"))
+    }
+
+    @Test fun `every curated seat carries the suffix the catalogue actually uses`() {
+        // THE BUG THIS TEST EXISTS FOR: v6 and v7 looked for `beatrice` and the catalogue has
+        // `beatrice_32`, so the search matched nothing and the screen said no voices came back.
+        val (voices, why) = Engines.speechifyVoices(Ring(listOf(Credential("k", null, "l"))))
+        assertEquals("", why)
+        assertEquals(8, voices.size)
+        for (v in voices) {
+            assertTrue("${v.id} has no _32 suffix", v.id.endsWith("_32"))
+            assertEquals("simba-3.2", v.model)
+            assertTrue(v.name.isNotBlank())
+        }
+    }
+
+    @Test fun `an empty ring says which key is missing rather than returning nothing`() {
+        val (voices, why) = Engines.speechifyVoices(Ring(emptyList()))
+        assertTrue(voices.isEmpty())
+        assertTrue("the reason was empty", why.contains("Speechify"))
+    }
+
+    @Test fun `the seats are all distinct`() {
+        val (voices, _) = Engines.speechifyVoices(Ring(listOf(Credential("k", null, "l"))))
+        assertEquals(voices.size, voices.map { it.id }.toSet().size)
+    }
+
+    // ── THE RING IS WALKED, NOT SAMPLED ONCE ───────────────────────────────
+
+    @Test fun `condemning the first credential exposes the second`() {
+        // Measured on the real Hume ring: accounts 1, 2 and 3 return 400 E0300 zero_credits and
+        // account 4 speaks. A router that gives up on the first refusal makes eighteen good
+        // accounts unreachable.
+        val ring = Ring((1..4).map { Credential("key-$it-${"z".repeat(30)}", null, "acct $it") })
+        val first = ring.current()!!
+        ring.condemn(first)
+        val second = ring.current()!!
+        assertNotEquals(first.key, second.key)
+        ring.condemn(second)
+        val third = ring.current()!!
+        assertNotEquals(second.key, third.key)
+        ring.condemn(third)
+        assertTrue(ring.current() != null)
+        assertEquals(3, ring.deadCount())
+    }
+
+    @Test fun `out of credit is a refusal, not a busy signal`() {
+        val body = """{"status_code":400,"message":"Exhausted credit balance.","details":{"code":"E0300"}}"""
+        assertEquals(Status.REJECTED, Classify.status(400, body))
+        assertTrue(Providers.explain(400, body).contains("credit"))
+    }
+
+    @Test fun `a walk cannot outlive the ring`() {
+        val ring = Ring((1..3).map { Credential("k$it${"z".repeat(30)}", null, "a$it") })
+        repeat(3) { ring.condemn(ring.current()!!) }
+        assertNull(ring.current())
+    }
+
     // ── WHICH KEYS THE APP NEEDS ────────────────────────────────────────
 
     @Test fun `the app names three providers and only three`() {

@@ -636,6 +636,69 @@ check(
     "that is the screen somebody is standing on when they can do something about it",
 )
 
+# ── THE VOICE BUG, AND THE SHAPE THAT HID IT ──────────────────────────────
+looper_code = code_only(src["Looper.kt"])
+
+check(
+    "the Speechify seats carry the suffix the catalogue uses",
+    voices_code.count("_32\"") >= 8,
+    "v6 and v7 searched for bare names and matched nothing in a 992-voice catalogue",
+)
+check(
+    "the seats are not fetched",
+    "SPEECHIFY_SEATS" in voices_code and "limit=200" not in voices_code,
+    "walking five pages to find eight known names is work that can fail, and it did",
+)
+check(
+    "the model is derived from the id",
+    "fun modelFor(" in voices_code and "endsWith(\"_32\")" in voices_code,
+    "simba-3.2 returns 400 for almost the whole catalogue",
+)
+check(
+    "a voice failure says why",
+    "Pair<List<Voice>, String>" in voices_code and "Providers.explain" in voices_code,
+    "an empty list for every possible cause is a message that cannot be acted on",
+)
+check(
+    "speak walks the ring rather than giving up on one refusal",
+    "for (unused in 0 until ring.size" in voices_code,
+    "three of this ring's twenty-one Hume accounts are out of credit and the first one is first",
+)
+
+# ── LOOPING ────────────────────────────────────────────────────
+check(
+    "the loop is a static buffer, not a restarting player",
+    "MODE_STATIC" in looper_code and "setLoopPoints" in looper_code,
+    "MediaPlayer.setLooping restarts a decoder, which is a click and a gap",
+)
+check(
+    "the loop obeys the playback points",
+    "trim.inMs" in looper_code and "trim.endOf" in looper_code,
+    "looping a whole take loops the breath at the front and the click at the end",
+)
+check(
+    "the loop cannot outlive the screen",
+    "Looper.stop()" in ui_code,
+    "an AudioTrack left playing after onDestroy is a sound with nothing to stop it",
+)
+check(
+    "a loop that cannot start says so",
+    "\"nothing to loop\"" in looper_code and "\"too short to loop\"" in looper_code,
+    "a loop button that does nothing is indistinguishable from a broken one",
+)
+
+# ── SAVING A TAKE ─────────────────────────────────────────────
+check(
+    "saving goes through the system chooser",
+    "CreateDocument(" in ui_code,
+    "wherever the rest of the work already lives, and no storage permission asked for",
+)
+check(
+    "what is exported is the original",
+    "pendingSave = Paths.original(" in ui_code,
+    "the playback points are this app's opinion; the file is the take",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -656,7 +719,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 130, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 140, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -668,7 +731,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 90:
+if len(checks_run) < 100:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))
