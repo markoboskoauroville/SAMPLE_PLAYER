@@ -415,6 +415,108 @@ check(
     "sending somebody to the second door first is sending them to a locked one",
 )
 
+# ── THE NETWORK ───────────────────────────────────────────────────
+net_code = code_only(src["Net.kt"])
+voices_code = code_only(src["Voices.kt"])
+keys_code = code_only(src["Keys.kt"])
+
+check(
+    "the User-Agent is set in exactly one place",
+    net_code.count('setRequestProperty("User-Agent"') == 2
+    and "User-Agent" not in voices_code,
+    "measured: 21 of 21 Hume pairs return 403/1010 without one, and 21 of 21 work with any",
+)
+check(
+    "no engine opens its own connection",
+    "HttpURLConnection" not in voices_code and "URL(" not in voices_code,
+    "every request goes through Net, which is why the UA cannot be forgotten in one of them",
+)
+check(
+    "AssemblyAI is sent the raw key with no Bearer",
+    '"authorization" to credential.key' in voices_code,
+    "a 401 on a good-looking AssemblyAI key is almost always a Bearer that should not be there",
+)
+check(
+    "one key is held for a whole transcription job",
+    "ring.current()" in voices_code and voices_code.count("val credential = ring.current()") == 1,
+    "an upload belongs to the account that made it; rotating mid-job condemns good accounts",
+)
+check(
+    "429 rests the account rather than condemning it",
+    "Status.LIMITED -> ring.rest" in voices_code or "ring.rest(c," in voices_code,
+    "a throttled key is a healthy key with a busy minute",
+)
+check(
+    "the model is stored beside the voice",
+    "val model: String" in code_only(src["Voices.kt"]),
+    "simba-3.2 returns 400 for any voice outside the curated eight",
+)
+# Written first as `Engines.quote(text)`, which is how a caller outside the object would spell it
+# and not how the object calls itself. The check was wrong and the code was right — the failure
+# mode delivery-gate.md 14 names, caught here only because a red gate is read rather than trusted.
+speak_body = voices_code[voices_code.index("fun speak("):] if "fun speak(" in voices_code else ""
+raw_text_in_body = re.findall(r"\$\{?text\}?", speak_body.split("fun quote(")[0])
+check(
+    "text bound for an engine is escaped",
+    "fun quote(" in voices_code and speak_body.count("quote(text)") == 2 and not raw_text_in_body,
+    f"both engines send quote(text); raw interpolations of the transcript: {len(raw_text_in_body)}",
+)
+
+# ── KEYS ──────────────────────────────────────────────────────────
+check(
+    "importing keys appends rather than replaces",
+    "appendText" in keys_code,
+    "pasting the Speechify note must not drop the Hume accounts imported last week",
+)
+check(
+    "no screen can render a key",
+    "masked" not in settings_code and "it.key" not in settings_code,
+    "the summary is provider, count and account label; there is no path that shows a value",
+)
+check(
+    "the import goes through the canonical parser",
+    "KeyParser.extract" in keys_code,
+    "the note is a working note with prose and URLs in it, and the parser was written for that",
+)
+
+# ── TRANSCRIPTION IS NOT A STEP ─────────────────────────────────────
+#
+# The brief had a Transcribe button and the instruction replaced it. Nobody wants a transcript;
+# they want a different voice, and the transcript is what the app needs in order to give them one.
+check(
+    "there is no Transcribe control anywhere",
+    '"Transcribe"' not in ui_code and '"Transcribe"' not in settings_code,
+    "it happens on the way to a voice, with a line saying so",
+)
+check(
+    "choosing an engine transcribes first if it has to",
+    "Transcribe.of(" in ui_code and "onEngine" in ui_code,
+    "the cell is transcribed on the path to the voice list",
+)
+
+# ── A LONG PRESS OPENS OPTIONS, IT DOES NOT DESTROY ──────────────────────────
+options_code = code_only(src["SlotOptions.kt"])
+check(
+    "a long press opens a menu",
+    "optionsFor = p.slot" in ui_code,
+    "the gesture that deletes must not be the gesture that opens options",
+)
+check(
+    "delete is a labelled control with a warning beside it",
+    "Delete this recording" in options_code and "no undo" in options_code,
+    "destroying a take should take reading a word",
+)
+check(
+    "the voice is chosen per cell",
+    "setVoice(project.id, openSlot" in ui_code,
+    "changing cell four must not silently change the other twenty-nine",
+)
+check(
+    "there is a way back to the original recording",
+    "onRevert" in ui_code and "Play my own recording again" in options_code,
+    "the recording was never replaced, so this only stops pointing at the generated file",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -435,7 +537,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 88, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 100, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -447,7 +549,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 55:
+if len(checks_run) < 72:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

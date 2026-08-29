@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var vault: Vault
     private lateinit var prefs: Prefs
+    private lateinit var keys: Keys
     private var player: MediaPlayer? = null
 
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         vault = Vault(filesDir)
         prefs = Prefs(this)
+        keys = Keys(this)
         vault.ensure(DEFAULT_PROJECT, prefs.slotCount)
         setContent { App() }
     }
@@ -78,6 +80,37 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun slotCountNow(): Int = prefs.slotCount
+
+    @Volatile private var stageSink: ((String) -> Unit)? = null
+
+    /** Report progress from a worker thread to whichever screen asked for it. */
+    private fun setStage(text: String) {
+        val sink = stageSink
+        runOnUiThread { sink?.invoke(text) }
+    }
+
+    /**
+     * Run a network job off the main thread.
+     *
+     * A plain thread, not a coroutine scope, because there is exactly one of these at a time and
+     * the alternative is machinery around a single call. Every job reports what it is doing: a six
+     * minute Generate that says nothing is indistinguishable from one that has died.
+     */
+    private fun work(onStage: (String) -> Unit, job: () -> Unit) {
+        stageSink = onStage
+        Thread {
+            runCatching { job() }.onFailure { setStage(it.javaClass.simpleName) }
+        }.start()
+    }
+
+    private fun playFile(f: File) {
+        player?.release()
+        player = MediaPlayer().apply {
+            setDataSource(f.absolutePath)
+            prepare()
+            start()
+        }
+    }
 
     private fun hasMic(): Boolean =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -100,6 +133,10 @@ class MainActivity : ComponentActivity() {
         var fraction by remember { mutableStateOf(0f) }
         var message by remember { mutableStateOf("") }
         var showSettings by remember { mutableStateOf(false) }
+        var optionsFor by remember { mutableStateOf<Int?>(null) }
+        var stage by remember { mutableStateOf("") }
+        var engine by remember { mutableStateOf<String?>(null) }
+        var voices by remember { mutableStateOf(emptyList<Voice>()) }
         var playMode by remember { mutableStateOf(prefs.playMode) }
         val pagerState = rememberPagerState(pageCount = { project.pages })
 
@@ -146,6 +183,118 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        val openSlot = optionsFor
+        if (openSlot != null) {
+            SlotOptions(
+                slot = project.slot(openSlot),
+                stage = stage,
+                voices = voices,
+                engine = engine,
+                canSpeechify = keys.has(Engines.SPEECHIFY),
+                canHume = keys.has(Engines.HUME),
+                hasGenerated = project.slot(openSlot).generated.isNotEmpty(),
+                onDelete = {
+                    Paths.slotDir(filesDir, project.id, openSlot)
+                        .walkTopDown().filter { it.isFile }.forEach { it.delete() }
+                    project = load(project.id, slotCountNow())
+                    message = "cell ${openSlot + 1} deleted"
+                    optionsFor = null
+                },
+                onEngine = { chosen ->
+                    engine = chosen
+                    voices = emptyList()
+                    // TRANSCRIBE ON THE WAY, NEVER AS A STEP. Nobody wants a transcript; they want
+                    // a different voice, and the transcript is what the app needs to give them
+                    // one. It happens here, with a line saying what is going on.
+                    work(
+                        onStage = { stage = it },
+                        job = {
+                            val slotNow = project.slot(openSlot)
+                            if (slotNow.words.isBlank()) {
+                                setStage("transcribing…")
+                                val wav = Paths.original(filesDir, project.id, openSlot)
+                                when (val t = Transcribe.of(wav, keys.ring("assemblyai"))) {
+                                    is Transcribe.Result.Text -> {
+                                        Words(this@MainActivity).put(project.id, openSlot, t.words)
+                                    }
+                                    is Transcribe.Result.Failed -> {
+                                        setStage(t.why)
+                                        return@work
+                                    }
+                                }
+                            }
+                            setStage("fetching voices…")
+                            val ring = keys.ring(chosen)
+                            val list = if (chosen == Engines.SPEECHIFY) {
+                                Engines.speechifyVoices(ring)
+                            } else {
+                                Engines.humeVoices(ring)
+                            }
+                            runOnUiThread {
+                                voices = list
+                                project = load(project.id, slotCountNow())
+                                stage = if (list.isEmpty()) "no voices came back" else ""
+                            }
+                        },
+                    )
+                },
+                onPreview = { v ->
+                    work({ stage = it }) {
+                        setStage("preparing ${v.name}…")
+                        val bytes = if (v.preview != null) {
+                            Net.bytes(v.preview)
+                        } else {
+                            val words = project.slot(openSlot).words.ifBlank { "This is my voice." }
+                            Engines.speak(v, words, keys.ring(v.engine)).first
+                        }
+                        if (bytes == null) {
+                            setStage("could not hear ${v.name}")
+                        } else {
+                            val f = File(cacheDir, "preview.audio")
+                            f.writeBytes(bytes)
+                            runOnUiThread { stage = "" ; playFile(f) }
+                        }
+                    }
+                },
+                onUse = { v ->
+                    work({ stage = it }) {
+                        val words = project.slot(openSlot).words
+                        if (words.isBlank()) {
+                            setStage("nothing transcribed yet")
+                            return@work
+                        }
+                        setStage("generating ${v.name}…")
+                        val (bytes, why) = Engines.speak(v, words, keys.ring(v.engine))
+                        if (bytes == null) {
+                            setStage(why)
+                            return@work
+                        }
+                        // BESIDE, NEVER ON TOP. The generated file has a different name in a
+                        // different directory from the recording, so no engine string and no loop
+                        // index can make one become the other.
+                        val out = Paths.generated(filesDir, project.id, openSlot, v.engine)
+                        out.parentFile?.mkdirs()
+                        out.writeBytes(bytes)
+                        Words(this@MainActivity).setVoice(project.id, openSlot, v.engine)
+                        runOnUiThread {
+                            project = load(project.id, slotCountNow())
+                            stage = "${v.name} saved. Your recording is untouched."
+                        }
+                    }
+                },
+                onRevert = {
+                    // THE RECORDING WAS NEVER REPLACED. This does not restore anything; it stops
+                    // pointing at the generated file. The original has been sitting there the
+                    // whole time under a different name.
+                    Words(this@MainActivity).setVoice(project.id, openSlot, null)
+                    project = load(project.id, slotCountNow())
+                    stage = "back to your own recording"
+                },
+                onBack = { optionsFor = null },
+            )
+            return
+        }
+
         if (showSettings) {
             // A SCREEN, NOT A SHEET OVER THE GRID. design-language.md: a panel that covers the
             // thing it configures leaves nowhere to look while deciding, and v5 of the stopwatch
@@ -154,6 +303,16 @@ class MainActivity : ComponentActivity() {
                 playMode = playMode,
                 slotCount = slotCount,
                 usage = vault.usageOf(project.id),
+                keySummary = keys.summary(),
+                onImportKeys = { note ->
+                    val added = keys.import(note)
+                    message = if (added.isEmpty()) {
+                        "nothing key-shaped in that"
+                    } else {
+                        added.entries.joinToString(", ") { e -> "${e.value} ${e.key}" } +
+                            " imported"
+                    }
+                },
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
@@ -256,12 +415,16 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onLongPress = {
+                            // A LONG PRESS NOW OPENS A MENU RATHER THAN DESTROYING A TAKE. The
+                            // gesture that deletes and the gesture that opens options must not be
+                            // the same gesture, now that there is more than one thing a cell can
+                            // be asked to do.
                             when (val p = Gesture.longPress(mode, project, slot.index)) {
                                 is Press.Clear -> {
-                                    Paths.slotDir(filesDir, project.id, p.slot)
-                                        .walkTopDown().filter { it.isFile }.forEach { it.delete() }
-                                    project = load(project.id, slotCountNow())
-                                    message = "slot ${p.slot + 1} cleared"
+                                    optionsFor = p.slot
+                                    stage = ""
+                                    engine = null
+                                    voices = emptyList()
                                 }
                                 is Press.Refused -> message = p.why
                                 else -> Unit
@@ -313,7 +476,7 @@ class MainActivity : ComponentActivity() {
         onSlot: (Int?) -> Unit,
     ) {
         player?.release()
-        val f = Paths.playing(filesDir, project.id, slot, project.engine)
+        val f = Paths.playing(filesDir, project.id, slot, project.slot(slot).voice)
         if (!f.isFile) { onSlot(null); return }
         player = MediaPlayer().apply {
             setDataSource(f.absolutePath)
@@ -339,6 +502,7 @@ class MainActivity : ComponentActivity() {
                 // show up until a lot of work has been done.
                 File(Paths.slotDir(filesDir, DEFAULT_PROJECT, slot), "gen")
                     .listFiles()?.forEach { it.delete() }
+                Words(this@MainActivity).clear(DEFAULT_PROJECT, slot)
             }
             onDone(load(DEFAULT_PROJECT, slotCountNow()), SampleCheck.describe(quality))
         }
@@ -351,9 +515,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun load(id: String, count: Int): Project {
+        val words = Words(this)
         val slots = (0 until count).map { i ->
             val f = Paths.original(filesDir, id, i)
-            Slot(index = i, hasOriginal = f.isFile, lengthMs = Recorder.lengthMs(f))
+            val gen = File(Paths.slotDir(filesDir, id, i), "gen")
+                .listFiles()?.map { it.nameWithoutExtension }?.toSet() ?: emptySet()
+            Slot(
+                index = i,
+                hasOriginal = f.isFile,
+                words = words.get(id, i),
+                generated = gen,
+                voice = words.voice(id, i),
+                lengthMs = Recorder.lengthMs(f),
+            )
         }
         return Project(id = id, name = id, slots = slots)
     }

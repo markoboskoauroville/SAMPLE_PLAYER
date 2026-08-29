@@ -14,9 +14,17 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.foundation.border
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -90,6 +98,8 @@ fun SettingsScreen(
     playMode: PlayMode,
     slotCount: Int,
     usage: Usage,
+    keySummary: List<String>,
+    onImportKeys: (String) -> Unit,
     onPlayMode: (PlayMode) -> Unit,
     onSlotCount: (Int) -> Unit,
     onClearGenerated: () -> Unit,
@@ -180,6 +190,56 @@ fun SettingsScreen(
         Note(
             "Removes engine voices only. Your own recordings are in a different file and are " +
                 "never touched by this. To delete one of your takes, long press its tile.",
+        )
+
+        // ── KEYS ─────────────────────────────────────────────────────────────────────────────
+        //
+        // PASTE THE NOTE, NOT THE KEY. The note Baba already has is a working note with account
+        // names, dates, the word CANCELLED and pasted URLs in it, and the canonical parser was
+        // written to read exactly that. Asking him to pick the keys out of it by hand is asking
+        // him to do the parser's job, on a phone, without typing.
+        //
+        // Nothing here can display a key. The summary is provider, count and account label, and
+        // there is no code path that renders the value — which is stronger than a rule saying not
+        // to.
+        Heading("KEYS")
+        if (keySummary.isEmpty()) {
+            Note("None yet. Paste a key note below and import it.")
+        } else {
+            Text(
+                keySummary.joinToString("\n"),
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        var pasted by remember { mutableStateOf("") }
+        BasicTextField(
+            value = pasted,
+            onValueChange = { pasted = it },
+            textStyle = TextStyle(
+                color = Color.White,
+                fontSize = 11.sp,
+                fontFamily = FontFamily.Monospace,
+            ),
+            cursorBrush = SolidColor(PLAY_AMBER),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(90.dp)
+                .border(1.dp, Color(0xFF52525B))
+                .padding(6.dp),
+        )
+        Spacer(Modifier.height(6.dp))
+        Button("Import pasted keys", Modifier.fillMaxWidth()) {
+            if (pasted.isNotBlank()) {
+                onImportKeys(pasted)
+                pasted = ""
+            }
+        }
+        Note(
+            "Paste the whole note. Account names on the line above each key are kept and shown; " +
+                "keys themselves are never displayed anywhere in this app.",
         )
 
         // ── PERMISSIONS ──────────────────────────────────────────────────────────────────────

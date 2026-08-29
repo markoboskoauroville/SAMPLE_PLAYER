@@ -601,6 +601,89 @@ class SamplePlayerTest {
         assertEquals(1, KeyParser.extract("$k\n$k\n").size)
     }
 
+    // ── SPEAKING TEXT THAT CAME FROM A MICROPHONE ─────────────────────────────
+
+    @Test fun `a quote in a transcript cannot break the request body`() {
+        // The text is whatever was said, arriving from a transcriber. An unescaped quote makes
+        // malformed JSON, and the engine answers 400 for what looks like a perfectly good phrase.
+        assertEquals("\"he said \\\"no\\\"\"", Engines.quote("he said \"no\""))
+    }
+
+    @Test fun `a backslash survives escaping`() {
+        assertEquals("\"a\\\\b\"", Engines.quote("a\\b"))
+    }
+
+    @Test fun `newlines and tabs become escapes rather than raw bytes`() {
+        assertEquals("\"a\\nb\"", Engines.quote("a\nb"))
+        assertEquals("\"a\\tb\"", Engines.quote("a\tb"))
+    }
+
+    @Test fun `a control character is escaped rather than sent raw`() {
+        assertTrue(Engines.quote("a\u0001b").contains("\\u0001"))
+    }
+
+    @Test fun `ordinary words are left alone`() {
+        assertEquals("\"danas je lijep dan\"", Engines.quote("danas je lijep dan"))
+    }
+
+    // ── READING A REPLY WITHOUT A JSON LIBRARY ───────────────────────────────
+
+    @Test fun `a string field is read out of a reply`() {
+        assertEquals("done", Net.str("""{"status":"done","x":1}""", "status"))
+    }
+
+    @Test fun `a missing field reads as null rather than as an empty answer`() {
+        assertNull(Net.str("""{"status":"done"}""", "text"))
+    }
+
+    @Test fun `an escaped quote inside a value survives the round trip`() {
+        assertEquals("he said \"no\"", Net.str("""{"text":"he said \"no\""}""", "text"))
+    }
+
+    @Test fun `a non-string field is not mistaken for one`() {
+        assertNull(Net.str("""{"count":12}""", "count"))
+    }
+
+    @Test fun `an escaped newline in a transcript is decoded`() {
+        assertEquals("a\nb", Net.str("""{"text":"a\nb"}""", "text"))
+    }
+
+    // ── THE VOICE IS PER CELL ─────────────────────────────────────────
+
+    @Test fun `a cell with no chosen voice plays the original`() {
+        val root = File("/tmp/x")
+        assertEquals(Paths.original(root, "p", 3), Paths.playing(root, "p", 3, null))
+    }
+
+    @Test fun `choosing a voice for one cell says nothing about any other`() {
+        val slots = (0 until DEFAULT_SLOTS).map {
+            if (it == 3) Slot(it, hasOriginal = true, voice = "hume") else Slot(it, hasOriginal = true)
+        }
+        val p = Project("p", "p", slots)
+        assertEquals("hume", p.slot(3).voice)
+        for (i in 0 until DEFAULT_SLOTS) {
+            if (i != 3) assertNull("cell $i was changed too", p.slot(i).voice)
+        }
+    }
+
+    @Test fun `a generated voice is a different file from the recording it speaks for`() {
+        val root = File("/tmp/x")
+        for (engine in listOf(Engines.SPEECHIFY, Engines.HUME)) {
+            assertNotEquals(
+                Paths.original(root, "p", 3).path,
+                Paths.generated(root, "p", 3, engine).path,
+            )
+        }
+    }
+
+    @Test fun `reverting to my own recording is not a restore`() {
+        // Nothing is copied back, because nothing was ever overwritten. Clearing the chosen voice
+        // is the whole operation, and this asserts the original path does not depend on it.
+        val root = File("/tmp/x")
+        val before = Paths.original(root, "p", 3)
+        assertEquals(before, Paths.playing(root, "p", 3, null))
+    }
+
     // ── THE STATUS MAPPING ────────────────────────────────────────────────────────────────────
 
     @Test fun `429 leaves the key alive`() {

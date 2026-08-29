@@ -83,6 +83,13 @@ data class Slot(
     val hasOriginal: Boolean = false,
     val words: String = "",
     val generated: Set<String> = emptySet(),
+    /**
+     * Which engine's voice THIS cell plays, or null for Baba's own recording.
+     *
+     * Per cell, not per project. A long press changes the voice of the cell that was pressed, and
+     * a project-wide setting would mean changing cell four silently changed the other twenty-nine.
+     */
+    val voice: String? = null,
     val lengthMs: Int = 0,
 ) {
     val isEmpty: Boolean get() = !hasOriginal
