@@ -223,9 +223,18 @@ object Dsp {
             DoubleArray(BANDS) { b -> f[b] - mean }
         }
 
-    // ── comparison ───────────────────────────────────────────────────────────────────────────
-
-    /** Cosine distance, 0 for identical direction and 2 for opposite. */
+    /**
+     * Two per cent of the loudest frame counts as silence.
+     *
+     * RELATIVE TO THIS UTTERANCE, not absolute. An absolute floor would be a guess about a
+     * microphone gain nobody has measured, and it would be wrong in both directions on the same
+     * phone: too high in a quiet room and too low in a car.
+     *
+     * This constant came back after the template matcher was removed took it with it. The
+     * compiler caught it, which is the only reason it is not a bug: the endpointer would
+     * otherwise have been comparing against nothing.
+     */
+    private const val SILENCE_FRACTION = 0.02
 }
 
 enum class SampleQuality {
