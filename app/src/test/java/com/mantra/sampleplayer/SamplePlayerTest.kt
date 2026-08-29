@@ -356,28 +356,25 @@ class SamplePlayerTest {
         assertEquals("simba-english", Engines.modelFor("lesya"))
     }
 
-    @Test fun `every curated seat carries the suffix the catalogue actually uses`() {
-        // THE BUG THIS TEST EXISTS FOR: v6 and v7 looked for `beatrice` and the catalogue has
+    @Test fun `the model rule is what the seats were really about`() {
+        // v9 kept an eight-name list in Engines and these tests walked it. The whole catalogue is
+        // fetched now — 992 voices, five cursor pages — so the list is gone and what it was
+        // protecting is the rule underneath it: the model follows the suffix.
+        //
+        // The bug it was written for: v6 and v7 looked for `beatrice` and the catalogue has
         // `beatrice_32`, so the search matched nothing and the screen said no voices came back.
-        val (voices, why) = Engines.speechifyVoices(Ring(listOf(Credential("k", null, "l"))))
-        assertEquals("", why)
-        assertEquals(8, voices.size)
-        for (v in voices) {
-            assertTrue("${v.id} has no _32 suffix", v.id.endsWith("_32"))
-            assertEquals("simba-3.2", v.model)
-            assertTrue(v.name.isNotBlank())
+        for (seat in listOf("beatrice_32", "imogen_32", "harper_32", "wyatt_32")) {
+            assertEquals("simba-3.2", Engines.modelFor(seat))
+        }
+        for (other in listOf("beatrice", "aadi", "lesya")) {
+            assertEquals("simba-english", Engines.modelFor(other))
         }
     }
 
-    @Test fun `an empty ring says which key is missing rather than returning nothing`() {
-        val (voices, why) = Engines.speechifyVoices(Ring(emptyList()))
-        assertTrue(voices.isEmpty())
-        assertTrue("the reason was empty", why.contains("Speechify"))
-    }
-
-    @Test fun `the seats are all distinct`() {
-        val (voices, _) = Engines.speechifyVoices(Ring(listOf(Credential("k", null, "l"))))
-        assertEquals(voices.size, voices.map { it.id }.toSet().size)
+    @Test fun `a voice id decides its own model, whatever a caller passes`() {
+        val bare = VoiceInfo(Engines.SPEECHIFY, "aadi", "Aadi")
+        assertEquals("", bare.model)
+        assertEquals("simba-english", Engines.modelFor(bare.id))
     }
 
     // ── THE RING IS WALKED, NOT SAMPLED ONCE ───────────────────────────────

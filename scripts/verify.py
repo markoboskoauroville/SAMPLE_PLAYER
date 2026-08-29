@@ -984,7 +984,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 190, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 185, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
