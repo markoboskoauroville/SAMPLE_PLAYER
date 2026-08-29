@@ -52,6 +52,13 @@ class Words(context: Context) {
 
     fun voice(id: String, slot: Int): String? = read(id, slot)["voice"]?.takeIf { it.isNotBlank() }
 
+    /** Whether this cell is marked to loop. Survives everything except a re-record. */
+    fun loops(id: String, slot: Int): Boolean = read(id, slot)["loop"] == "1"
+
+    fun setLoop(id: String, slot: Int, on: Boolean) {
+        write(id, slot, read(id, slot) + ("loop" to if (on) "1" else "0"))
+    }
+
     /** The in and out points. Two numbers; the recording itself is never altered by editing. */
     fun trim(id: String, slot: Int): Trim {
         val m = read(id, slot)

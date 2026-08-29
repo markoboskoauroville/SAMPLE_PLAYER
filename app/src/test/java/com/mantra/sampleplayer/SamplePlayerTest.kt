@@ -111,6 +111,56 @@ class SamplePlayerTest {
         assertTrue(Gesture.longPress(Mode.PLAYING, filled(), 2) is Press.Refused)
     }
 
+    // ── LOOP IS A FLAG ON THE CELL ────────────────────────────────────
+
+    private fun marked(vararg idx: Int): Project {
+        val slots = (0 until DEFAULT_SLOTS).map {
+            Slot(it, hasOriginal = true, loop = it in idx.toSet())
+        }
+        return Project("p", "p", slots)
+    }
+
+    @Test fun `a marked cell loops instead of seeking`() {
+        assertEquals(Press.ToggleLoop(4), Gesture.press(Mode.PLAYING, marked(4), 4))
+    }
+
+    @Test fun `an unmarked cell still seeks`() {
+        assertEquals(Press.SeekTo(4), Gesture.press(Mode.PLAYING, marked(9), 4))
+    }
+
+    @Test fun `the same press both starts and stops`() {
+        // The whole point of the change: v9 started the sound from inside the menu, so the stop
+        // was in a different place from the start. One press, one cell, both directions.
+        val p = marked(4)
+        assertEquals(Press.ToggleLoop(4), Gesture.press(Mode.PLAYING, p, 4))
+        assertEquals(Press.ToggleLoop(4), Gesture.press(Mode.PLAYING, p, 4))
+    }
+
+    @Test fun `a marked cell still cannot be recorded over by accident`() {
+        // The property the playing branch exists to hold, unchanged by the new meaning.
+        val p = marked(4)
+        assertFalse(Gesture.press(Mode.PLAYING, p, 4) is Press.StartRecording)
+        assertFalse(Gesture.press(Mode.PLAYING, p, 4) is Press.Refused)
+    }
+
+    @Test fun `marking a cell says nothing about any other`() {
+        val p = marked(4)
+        assertTrue(p.slot(4).loop)
+        for (i in 0 until DEFAULT_SLOTS) if (i != 4) assertFalse("cell $i", p.slot(i).loop)
+    }
+
+    @Test fun `a marked but empty cell has nothing to loop`() {
+        val slots = (0 until DEFAULT_SLOTS).map { Slot(it, hasOriginal = false, loop = true) }
+        val p = Project("p", "p", slots)
+        assertTrue(Gesture.press(Mode.PLAYING, p, 3) is Press.Refused)
+    }
+
+    @Test fun `in record mode a marked cell is still a recording target`() {
+        // The flag belongs to playback. Marking a cell must not make it unrecordable.
+        val p = marked(4)
+        assertEquals(Press.ConfirmOverwrite(4), Gesture.press(Mode.STOPPED, p, 4))
+    }
+
     // ── THE TRIANGLE ──────────────────────────────────────────────────────────────────────────
 
     @Test fun `the triangle advances one slot`() {

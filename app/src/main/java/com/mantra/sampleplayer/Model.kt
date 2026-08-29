@@ -118,6 +118,15 @@ sealed interface Press {
     data class ConfirmOverwrite(val slot: Int) : Press
     data class StopRecording(val slot: Int) : Press
     data class SeekTo(val slot: Int) : Press
+
+    /**
+     * A cell marked to loop was pressed: start it, or stop it if it is the one already looping.
+     *
+     * The caller is told which slot and nothing else, because whether it is currently sounding is
+     * a fact about the loop player rather than about the press, and two places holding an opinion
+     * about that is how a stop button stops the wrong thing.
+     */
+    data class ToggleLoop(val slot: Int) : Press
     data class Clear(val slot: Int) : Press
 
     /** Nothing happens, and the reason is carried so the interface can say it out loud. */
@@ -143,6 +152,16 @@ data class Slot(
      * a project-wide setting would mean changing cell four silently changed the other twenty-nine.
      */
     val voice: String? = null,
+
+    /**
+     * WHETHER THIS CELL LOOPS, AND IT IS A FLAG RATHER THAN AN ACTION.
+     *
+     * v9 made Loop a button in the menu that started the sound immediately, which meant the only
+     * way to stop it was to go back into the menu of that exact cell and press it again. Marking
+     * the cell instead puts the loop on the grid where the rest of the playing happens: the cell
+     * carries an infinity sign, one press starts it, the next stops it.
+     */
+    val loop: Boolean = false,
     val lengthMs: Int = 0,
 ) {
     val isEmpty: Boolean get() = !hasOriginal
@@ -250,7 +269,9 @@ object Gesture {
 
             Mode.PLAYING ->
                 if (project.slot(slot).hasOriginal) {
-                    Press.SeekTo(slot)
+                    // A MARKED CELL LOOPS INSTEAD OF SEEKING. Both are still a press in play mode
+                    // and neither can record, which is the property this branch exists to hold.
+                    if (project.slot(slot).loop) Press.ToggleLoop(slot) else Press.SeekTo(slot)
                 } else {
                     // An empty slot during playback does NOT fall through to recording. That
                     // fall-through is the bug this whole enum exists to prevent.

@@ -855,6 +855,36 @@ check(
     "a lot of glass for a button pressed once per take, on a screen for showing cells",
 )
 
+# ── LOOP IS A FLAG, AND THE STOP IS WHERE THE START WAS ──────────────────────
+#
+# v9 put Loop in the menu and started the sound from there, so the only way to stop it was to find
+# that exact cell again and open the same menu. Marking the cell puts both halves on the grid.
+check(
+    "the press rule knows about looping",
+    "ToggleLoop" in model_code and "project.slot(slot).loop" in model_code,
+    "a marked cell loops instead of seeking, and neither can record",
+)
+check(
+    "the menu sets a flag rather than starting a sound",
+    "setLoop(project.id, openSlot, now)" in ui_code,
+    "the start and the stop are the same press on the same cell",
+)
+check(
+    "the flag is stored beside the cell",
+    "fun setLoop(" in code_only(src["Words.kt"]) and "fun loops(" in code_only(src["Words.kt"]),
+    "it survives leaving the screen, which an in-memory flag would not",
+)
+check(
+    "a marked cell says so on the grid",
+    "slot.loop" in tile_code and "u221e" in tile_code,
+    "the mark is where the press will happen",
+)
+check(
+    "the mark is redrawn when the loop starts or stops",
+    "loopingSlot" in ui_code,
+    "Looper.slot is a plain field and nothing would recompose on it",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -875,7 +905,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 160, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 170, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -887,7 +917,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 124:
+if len(checks_run) < 130:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

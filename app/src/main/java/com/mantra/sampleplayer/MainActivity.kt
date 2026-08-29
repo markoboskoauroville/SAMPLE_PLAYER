@@ -184,6 +184,9 @@ class MainActivity : ComponentActivity() {
         var keyRows by remember { mutableStateOf(keys.rows()) }
         var keyBusy by remember { mutableStateOf("") }
         var confirmOverwrite by remember { mutableStateOf<Int?>(null) }
+        // Mirrored into composition state, because Looper.slot is a plain field and nothing
+        // would redraw the mark when it changed.
+        var loopingSlot by remember { mutableStateOf(Looper.slot) }
         var stage by remember { mutableStateOf("") }
         var engine by remember { mutableStateOf<String?>(null) }
         var voices by remember { mutableStateOf(emptyList<Voice>()) }
@@ -332,7 +335,7 @@ class MainActivity : ComponentActivity() {
                 canSpeechify = keys.has(Engines.SPEECHIFY),
                 canHume = keys.has(Engines.HUME),
                 hasGenerated = project.slot(openSlot).generated.isNotEmpty(),
-                looping = Looper.slot == openSlot,
+                looping = loopingSlot == openSlot,
                 onDelete = {
                     Paths.slotDir(filesDir, project.id, openSlot)
                         .walkTopDown().filter { it.isFile }.forEach { it.delete() }
@@ -447,22 +450,14 @@ class MainActivity : ComponentActivity() {
                     saveSample.launch("${project.name}-%02d.wav".format(openSlot + 1))
                 },
                 onLoop = {
-                    if (Looper.slot == openSlot) {
-                        Looper.stop()
-                        stage = ""
-                    } else {
-                        // Stop ordinary playback first. Two things sounding at once is not a
-                        // feature, and the loop is the one that was just asked for.
-                        player?.let { runCatching { it.stop() }; it.release() }
-                        player = null
-                        playing = null
-                        val why = Looper.start(
-                            Paths.original(filesDir, project.id, openSlot),
-                            openSlot,
-                            Words(this@MainActivity).trim(project.id, openSlot),
-                        )
-                        stage = why.ifBlank { "looping" }
-                    }
+                    // A FLAG, NOT A START. Marking it here and pressing it on the grid keeps the
+                    // stop where the start was: v9 started the sound from inside this menu, so the
+                    // only way to stop it was to find the same cell and open the same menu again.
+                    val now = !project.slot(openSlot).loop
+                    Words(this@MainActivity).setLoop(project.id, openSlot, now)
+                    if (!now && Looper.slot == openSlot) Looper.stop()
+                    project = load(project.id, slotCountNow())
+                    stage = if (now) "marked to loop" else "loop off"
                 },
                 onBack = { optionsFor = null },
             )
@@ -583,6 +578,7 @@ class MainActivity : ComponentActivity() {
                         slot = slot,
                         playhead = if (playing == slot.index) fraction else null,
                         recording = recordingSlot == slot.index,
+                        looping = loopingSlot == slot.index,
                         // While this tile is recording it draws the shape arriving, not the file
                         // on disk, which does not exist yet.
                         waveform = if (recordingSlot == slot.index) {
@@ -614,7 +610,27 @@ class MainActivity : ComponentActivity() {
                                     recordingSlot = null
                                     project = load(project.id, slotCountNow())
                                 }
-                                is Press.SeekTo -> startPlaying(p.slot, project, playMode) { playing = it }
+                                is Press.SeekTo ->
+                                    startPlaying(p.slot, project, playMode) { playing = it }
+                                is Press.ToggleLoop -> {
+                                    if (Looper.slot == p.slot) {
+                                        Looper.stop()
+                                        message = ""
+                                    } else {
+                                        // Two things sounding at once is not a feature, and the
+                                        // loop is the one that was just asked for.
+                                        player?.let { runCatching { it.stop() }; it.release() }
+                                        player = null
+                                        playing = null
+                                        val why = Looper.start(
+                                            Paths.original(filesDir, project.id, p.slot),
+                                            p.slot,
+                                            Words(this@MainActivity).trim(project.id, p.slot),
+                                        )
+                                        message = why
+                                    }
+                                    loopingSlot = Looper.slot
+                                }
                                 is Press.Clear -> Unit
                                 is Press.Refused -> message = p.why
                             }
@@ -835,6 +851,7 @@ class MainActivity : ComponentActivity() {
                 words = words.get(id, i),
                 generated = gen,
                 voice = words.voice(id, i),
+                loop = words.loops(id, i),
                 lengthMs = Recorder.lengthMs(f),
             )
         }

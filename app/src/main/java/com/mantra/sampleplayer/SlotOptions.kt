@@ -110,14 +110,16 @@ fun SlotOptions(
 
         // ── LOOP ─────────────────────────────────────────────────────────────────────────────
         Button(
-            label = if (looping) "Stop looping" else "Loop this cell",
+            label = if (slot.loop) "\u221e  Loop is on for this cell" else "Set this cell to loop",
             modifier = Modifier.fillMaxWidth(),
-            solid = looping,
+            solid = slot.loop,
             accent = PLAY_AMBER,
         ) { onLoop() }
         Text(
-            "Held in memory and repeated with no gap at the join, between the playback points. " +
-                "It loops your own recording, not a generated voice.",
+            "A flag, not a start button. A marked cell carries \u221e on the grid: in play mode " +
+                "one press starts it looping and the next press stops it. Held in memory and " +
+                "repeated with no gap at the join, between the playback points, and it loops " +
+                "your own recording rather than a generated voice.",
             color = Color(0xFF71717A),
             fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,

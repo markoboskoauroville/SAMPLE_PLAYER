@@ -69,6 +69,7 @@ fun Tile(
     slot: Slot,
     playhead: Float?,
     recording: Boolean,
+    looping: Boolean,
     waveform: FloatArray,
     modifier: Modifier = Modifier,
     onPress: () -> Unit,
@@ -106,6 +107,7 @@ fun Tile(
             }
             .padding(horizontal = 4.dp, vertical = 4.dp),
     ) {
+        Row(Modifier.fillMaxWidth()) {
         Text(
             "%02d".format(slot.index + 1),
             color = if (slot.hasOriginal) Color.White else Color(0xFF71717A),
@@ -113,6 +115,18 @@ fun Tile(
             maxLines = 1,
             fontFamily = FontFamily.Monospace,
         )
+        Spacer(Modifier.weight(1f))
+        // THE MARK. A cell set to loop says so on the grid, because the grid is where it will be
+        // pressed. Amber while it is the one sounding, dim while it is only marked.
+        if (slot.loop) {
+            Text(
+                "\u221e",
+                color = if (looping) PLAY_AMBER else Color(0xFF71717A),
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        }
         Box(
             Modifier
                 .fillMaxWidth()
