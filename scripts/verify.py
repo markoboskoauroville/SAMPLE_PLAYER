@@ -239,6 +239,77 @@ check(
     "an unbounded array on a ninety second ceiling is a leak with a clock on it",
 )
 
+# ── NORMALISATION HAPPENS, AND IN THE RIGHT ORDER ──────────────────────────────
+#
+# ORDER MATTERS BOTH WAYS ROUND. The quality check must see the take as it was recorded, or a
+# quiet-but-usable phrase and a recording of an empty room look identical once both have been
+# pulled up to the same peak. And the file must be rewritten before anybody plays it, or thirty
+# phrases recorded across a week play back as thirty different volumes.
+recorder_code = code_only(src["Recorder.kt"])
+dsp_code = code_only(src["Dsp.kt"])
+check(
+    "the recorder normalises the finished take",
+    "normalise(raw)" in recorder_code and "writeWav(" in recorder_code,
+    "read, scale, write, once per take rather than once per playback",
+)
+if "SampleCheck.assess" in recorder_code and "normalise(raw)" in recorder_code:
+    order_ok = recorder_code.index("SampleCheck.assess") < recorder_code.index("normalise(raw)")
+else:
+    order_ok = False
+check(
+    "the quality check runs BEFORE normalisation",
+    order_ok,
+    "otherwise room tone and a quiet phrase are indistinguishable once both are at the same peak",
+)
+check(
+    "the target leaves headroom rather than sitting on the rail",
+    "TARGET_PEAK = 0.98855f" in dsp_code,
+    "-0.1 dBFS, so nothing downstream has to round in our favour",
+)
+check(
+    "the gain is capped",
+    "MAX_GAIN" in dsp_code and "coerceAtMost(maxGain)" in dsp_code,
+    "without a ceiling a near-silent room is multiplied into a convincing wall of hiss",
+)
+check(
+    "the take is rewritten through a temporary file",
+    ".tmp" in recorder_code and "renameTo" in recorder_code,
+    "a process killed mid-rewrite must not leave a corrupt file where the only copy was",
+)
+
+# ── PLAY MODE ───────────────────────────────────────────────────────
+check(
+    "what happens after a sample ends is one pure rule",
+    "fun nextInPlayback(" in model_code,
+    "the mode is an argument, so Test 1 walks both without a preferences file",
+)
+check(
+    "the player asks that rule rather than deciding for itself",
+    "nextInPlayback(project, slot, mode)" in ui_code,
+    "MainActivity does not carry its own copy of the running order",
+)
+check(
+    "continuous is the default",
+    "getOrDefault(PlayMode.CONTINUOUS)" in code_only(src["Settings.kt"]),
+    "a missing or corrupt preference plays the set, which is what the app is for",
+)
+
+# ── SETTINGS ────────────────────────────────────────────────────────
+settings_code = code_only(src["Settings.kt"])
+check(
+    "settings is a screen and takes the insets too",
+    "safeDrawingPadding()" in settings_code,
+    "the second screen must not repeat the mistake the first one made",
+)
+# The clumsy version of this check failed while the code was correct, by testing a phrase in a
+# string literal instead of a behaviour. It now asserts the thing that matters: settings never
+# names the original recording and never deletes a tree.
+check(
+    "settings cannot reach an original recording",
+    "Paths.original" not in settings_code and "deleteRecursively" not in settings_code,
+    "the only delete offered here goes through Vault.clearGenerated, which walks gen/ alone",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -260,7 +331,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 45, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 70, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -272,7 +343,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 28:
+if len(checks_run) < 39:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

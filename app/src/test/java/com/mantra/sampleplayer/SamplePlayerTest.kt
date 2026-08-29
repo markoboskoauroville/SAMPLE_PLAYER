@@ -283,6 +283,99 @@ class SamplePlayerTest {
         assertTrue(c.exceeded(0.05f, 2_100))
     }
 
+    // ── NORMALISATION ────────────────────────────────────────────────
+
+    private fun peakOf(a: ShortArray) = a.maxOf { kotlin.math.abs(it.toInt()) }
+
+    @Test fun `a quiet take is brought up to just under full scale`() {
+        // Peak 6000 of 32767, about -15 dBFS: a phrase spoken at arm's length. Deliberately
+        // ABOVE the level where MAX_GAIN starts to bite, because this case is about reaching
+        // the target and the cap has its own test below. Written at 3000 first, where the cap
+        // held at 30000 and the test failed for the right reason.
+        val quiet = ShortArray(1000) { if (it % 2 == 0) 6000 else -6000 }
+        val loud = normalise(quiet)
+        val target = (TARGET_PEAK * 32767f).toInt()
+        assertTrue("peak was ${peakOf(loud)}, wanted about $target", peakOf(loud) in (target - 2)..target)
+    }
+
+    @Test fun `normalisation never reaches the rail`() {
+        // A tenth of a decibel of headroom, so nothing downstream has to round in our favour.
+        val quiet = ShortArray(500) { 1000 }
+        assertTrue(peakOf(normalise(quiet)) < 32767)
+    }
+
+    @Test fun `a take already at full scale is left exactly alone`() {
+        // Attenuating a hot take does not improve it and re-scaling always loses to rounding.
+        val hot = ShortArray(100) { if (it % 2 == 0) 32767 else -32767 }
+        assertTrue(normalise(hot) === hot)
+    }
+
+    @Test fun `silence is not amplified into anything`() {
+        val silence = ShortArray(500)
+        val out = normalise(silence)
+        assertEquals(0, peakOf(out))
+    }
+
+    @Test fun `the gain is capped so a near-silent room is not turned into hiss`() {
+        // Without a ceiling this multiplies by four hundred and the tile shows a healthy waveform
+        // over a recording of an empty room.
+        val nearlySilent = ShortArray(500) { 80 }
+        val out = normalise(nearlySilent)
+        assertEquals((80 * MAX_GAIN).toInt(), peakOf(out))
+        assertTrue("the cap did not hold", peakOf(out) < (TARGET_PEAK * 32767f).toInt())
+    }
+
+    @Test fun `normalisation preserves length and shape`() {
+        val src = ShortArray(64) { (it * 100 - 3200).toShort() }
+        val out = normalise(src)
+        assertEquals(src.size, out.size)
+        // The ratio between any two samples survives, which is what makes it a level change and
+        // not a distortion.
+        val gain = out[0].toDouble() / src[0]
+        for (i in src.indices) {
+            if (src[i].toInt() == 0) continue
+            assertEquals(gain, out[i].toDouble() / src[i], 0.02)
+        }
+    }
+
+    @Test fun `an empty array is returned untouched rather than crashing`() {
+        assertEquals(0, normalise(ShortArray(0)).size)
+    }
+
+    // ── PLAY MODE ───────────────────────────────────────────────────
+
+    @Test fun `continuous play walks the running order`() {
+        val p = filled(0, 4, 9)
+        assertEquals(4, nextInPlayback(p, 0, PlayMode.CONTINUOUS))
+        assertEquals(9, nextInPlayback(p, 4, PlayMode.CONTINUOUS))
+    }
+
+    @Test fun `continuous play stops at the end rather than looping`() {
+        assertNull(nextInPlayback(filled(0, 4, 9), 9, PlayMode.CONTINUOUS))
+    }
+
+    @Test fun `single play always stops`() {
+        val p = filled(0, 4, 9)
+        for (slot in listOf(0, 4, 9)) {
+            assertNull("slot $slot continued in single mode", nextInPlayback(p, slot, PlayMode.SINGLE))
+        }
+    }
+
+    @Test fun `continuous play follows an arranged order, not the slot numbers`() {
+        val p = filled(0, 4, 9).copy(order = listOf(9, 0, 4))
+        assertEquals(0, nextInPlayback(p, 9, PlayMode.CONTINUOUS))
+        assertEquals(4, nextInPlayback(p, 0, PlayMode.CONTINUOUS))
+        assertNull(nextInPlayback(p, 4, PlayMode.CONTINUOUS))
+    }
+
+    @Test fun `a slot cleared while sounding stops rather than jumping somewhere else`() {
+        assertNull(nextInPlayback(filled(0, 4), 9, PlayMode.CONTINUOUS))
+    }
+
+    @Test fun `continuous is the default, because it is what the app was built for`() {
+        assertEquals(PlayMode.CONTINUOUS, PlayMode.entries.first())
+    }
+
     // ── THE METER MUST NOT LIE ────────────────────────────────────────────────────────────────
 
     @Test fun `a dead microphone reads flat rather than dancing`() {

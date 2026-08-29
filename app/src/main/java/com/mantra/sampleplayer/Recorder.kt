@@ -165,10 +165,27 @@ object Recorder {
             record = null
 
             // JUDGE THE RECORDING BEFORE IT COUNTS AS ONE. A slot that fills with two seconds of
-            // room tone looks completely successful: the line is solid, the count is right, the
+            // room tone looks completely successful: the tile is solid, the count is right, the
             // waveform has a shape, and the only symptom appears later in the transcription.
             val quality = SampleCheck.assess(collected.toShortArray())
-            if (quality != SampleQuality.GOOD) target.delete()
+            if (quality != SampleQuality.GOOD) {
+                target.delete()
+                onEnded(quality)
+                return@thread
+            }
+
+            // NORMALISE, AND ONLY AFTER THE TAKE HAS PASSED. Order matters both ways round: the
+            // check must see the recording as it was made, or a quiet-but-usable take and a
+            // room-tone take look identical once both have been pulled up to the same peak. And
+            // the file must be rewritten before anybody plays it, or thirty phrases recorded
+            // across a week play back as thirty different volumes.
+            //
+            // Read, scale, write. It is a whole extra pass over the file, which for a phrase is a
+            // few hundred kilobytes and a few milliseconds, and it happens once per take rather
+            // than once per playback.
+            val raw = read(target)
+            val loud = normalise(raw)
+            if (loud !== raw) writeWav(target, loud)
             onEnded(quality)
         }
     }
@@ -208,6 +225,33 @@ object Recorder {
 
     /** Past this many live values the shape is halved rather than grown without a bound. */
     const val LIVE_MAX = 512
+
+    /**
+     * Write a whole WAV in one go, used to replace a take with its normalised self.
+     *
+     * A temporary file and a rename, not a truncate in place. A process killed halfway through
+     * rewriting a recording over itself leaves a corrupt file where a good one was, and this is
+     * the one file in the app that cannot be made again.
+     */
+    fun writeWav(target: File, samples: ShortArray) {
+        val tmp = File(target.parentFile, target.name + ".tmp")
+        RandomAccessFile(tmp, "rw").use { raf ->
+            raf.setLength(0)
+            writeWavHeader(raf, samples.size * 2L)
+            val bytes = ByteArray(samples.size * 2)
+            for (i in samples.indices) {
+                val v = samples[i].toInt()
+                bytes[i * 2] = (v and 0xFF).toByte()
+                bytes[i * 2 + 1] = ((v shr 8) and 0xFF).toByte()
+            }
+            raf.seek(44)
+            raf.write(bytes)
+        }
+        if (!tmp.renameTo(target)) {
+            tmp.copyTo(target, overwrite = true)
+            tmp.delete()
+        }
+    }
 
     /** Read a WAV back as samples, for the waveform and the quality check. */
     fun read(file: File): ShortArray {

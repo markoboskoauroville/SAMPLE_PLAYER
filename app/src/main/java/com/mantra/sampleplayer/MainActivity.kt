@@ -55,6 +55,7 @@ import kotlinx.coroutines.delay
 class MainActivity : ComponentActivity() {
 
     private lateinit var vault: Vault
+    private lateinit var prefs: Prefs
     private var player: MediaPlayer? = null
 
     private val askMic = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         vault = Vault(filesDir)
+        prefs = Prefs(this)
         vault.ensure(DEFAULT_PROJECT)
         setContent { App() }
     }
@@ -91,6 +93,8 @@ class MainActivity : ComponentActivity() {
         var playing by remember { mutableStateOf<Int?>(null) }
         var fraction by remember { mutableStateOf(0f) }
         var message by remember { mutableStateOf("") }
+        var showSettings by remember { mutableStateOf(false) }
+        var playMode by remember { mutableStateOf(prefs.playMode) }
         val gridState = rememberLazyGridState()
 
         val level by Recorder.level.collectAsState()
@@ -134,6 +138,27 @@ class MainActivity : ComponentActivity() {
                 fraction = (p.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
                 delay(60)
             }
+        }
+
+        if (showSettings) {
+            // A SCREEN, NOT A SHEET OVER THE GRID. design-language.md: a panel that covers the
+            // thing it configures leaves nowhere to look while deciding, and v5 of the stopwatch
+            // shipped exactly that and had no way back out of it in landscape.
+            SettingsScreen(
+                playMode = playMode,
+                usage = vault.usageOf(project.id),
+                onPlayMode = {
+                    playMode = it
+                    prefs.playMode = it
+                },
+                onClearGenerated = {
+                    val n = vault.clearGenerated(project.id)
+                    message = "cleared $n generated file(s)"
+                },
+                onPermissions = { openAccessibilitySettings() },
+                onBack = { showSettings = false },
+            )
+            return
         }
 
         Column(
@@ -185,7 +210,7 @@ class MainActivity : ComponentActivity() {
                                     recordingSlot = null
                                     project = load(project.id)
                                 }
-                                is Press.SeekTo -> startPlaying(p.slot, project) { playing = it }
+                                is Press.SeekTo -> startPlaying(p.slot, project, playMode) { playing = it }
                                 is Press.Clear -> Unit
                                 is Press.Refused -> message = p.why
                             }
@@ -211,8 +236,8 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Button("Seq", Modifier.width(64.dp)) { message = "Seq arrives with v3" }
-                Button("Voice", Modifier.width(72.dp)) { message = "Voice arrives with v3" }
+                Button("Seq", Modifier.width(58.dp)) { message = "Seq arrives later" }
+                Button("Voice", Modifier.width(66.dp)) { message = "Voice arrives later" }
                 Button(
                     label = if (armed == Mode.PLAYING) "PLAY" else "REC",
                     modifier = Modifier.weight(1f),
@@ -233,11 +258,19 @@ class MainActivity : ComponentActivity() {
                     armed = if (armed == Mode.PLAYING) Mode.STOPPED else Mode.PLAYING
                     message = ""
                 }
+                // The gear last, and narrow. It is the control pressed least often in the app and
+                // it sits at the end of the row for that reason, not because there was space left.
+                Button("\u2699", Modifier.width(52.dp)) { showSettings = true }
             }
         }
     }
 
-    private fun startPlaying(slot: Int, project: Project, onSlot: (Int?) -> Unit) {
+    private fun startPlaying(
+        slot: Int,
+        project: Project,
+        mode: PlayMode,
+        onSlot: (Int?) -> Unit,
+    ) {
         player?.release()
         val f = Paths.playing(filesDir, project.id, slot, project.engine)
         if (!f.isFile) { onSlot(null); return }
@@ -245,10 +278,8 @@ class MainActivity : ComponentActivity() {
             setDataSource(f.absolutePath)
             prepare()
             setOnCompletionListener {
-                val order = project.sequence()
-                val at = order.indexOf(slot)
-                val next = order.getOrNull(at + 1)
-                if (next == null) onSlot(null) else startPlaying(next, project, onSlot)
+                val next = nextInPlayback(project, slot, mode)
+                if (next == null) onSlot(null) else startPlaying(next, project, mode, onSlot)
             }
             start()
         }

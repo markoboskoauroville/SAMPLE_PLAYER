@@ -192,6 +192,41 @@ object Advance {
 }
 
 /**
+ * WHAT HAPPENS WHEN A SAMPLE ENDS.
+ *
+ * CONTINUOUS is the default and it is what the app was built for: press a tile, hear the set from
+ * there, the playhead travelling down the grid. SINGLE plays the one tile and stops.
+ *
+ * Single exists because auditioning and listening are different jobs. Deciding whether take 14 is
+ * the one means hearing take 14 four times, and in continuous mode that is four presses each
+ * followed by reaching for stop before take 15 starts talking over your thinking.
+ */
+enum class PlayMode {
+    /** One after another, down the running order. The default. */
+    CONTINUOUS,
+
+    /** Play the tile that was pressed and stop. */
+    SINGLE,
+}
+
+/**
+ * The slot to play after [slot] finishes, or null to stop.
+ *
+ * Pure, and it takes the mode as an argument rather than reading a setting, so Test 1 can walk
+ * both modes and every edge of the running order without a phone or a preferences file.
+ */
+fun nextInPlayback(project: Project, slot: Int, mode: PlayMode): Int? {
+    if (mode == PlayMode.SINGLE) return null
+    val order = project.sequence()
+    val at = order.indexOf(slot)
+    // A slot that is not in the running order at all stops rather than starting from the top. It
+    // means the tile was cleared while it was sounding, and resuming somewhere else would be the
+    // app deciding what to play next on its own.
+    if (at < 0) return null
+    return order.getOrNull(at + 1)
+}
+
+/**
  * THE PLAYHEAD, WHICH IS WHAT MAKES THE LINES PLAYERS RATHER THAN PICTURES.
  *
  * A thin vertical mark crosses each line's own waveform showing where inside that sample the

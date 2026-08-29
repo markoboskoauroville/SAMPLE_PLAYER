@@ -281,6 +281,57 @@ object SampleCheck {
 }
 
 /**
+ * NORMALISE TO JUST UNDER FULL SCALE.
+ *
+ * Thirty phrases recorded across a week, some close to the phone and some across a room, play back
+ * as thirty different volumes. That is not a mixing problem to be solved later: it is the first
+ * thing anybody hears, and it makes a good take sound like a bad one.
+ *
+ * WHY NOT 0 dBFS. A sample sitting exactly at the rail is a sample that may already have been
+ * clipped, and every stage after it — the phone's own resampling, a codec, a player's volume
+ * curve — can push an intersample peak above the rail and produce audible distortion from a file
+ * that measured clean. Baba asked for a tenth of a decibel of headroom and that is exactly the
+ * right amount: inaudible, and enough that nothing downstream has to round in our favour.
+ *
+ *   -0.1 dBFS = 10^(-0.1/20) = 0.98855 of full scale = 32,392 of 32,767
+ *
+ * THE GAIN IS CAPPED, and this is the part that would be wrong if it were left out. A take that
+ * is nearly silent has a tiny peak, and dividing by a tiny peak is a very large number. Without a
+ * ceiling, a recording of an empty room would be amplified into a convincing wall of hiss, and the
+ * tile would show a healthy waveform. [SampleCheck] already refuses silence, but the two guards
+ * answer different questions and a normaliser that can multiply by four hundred is a bug waiting
+ * for the one recording that slips past.
+ *
+ * Returns a NEW array. The caller decides whether to write it, so nothing here can quietly modify
+ * a recording that is about to be checked.
+ */
+fun normalise(samples: ShortArray, targetPeak: Float = TARGET_PEAK, maxGain: Float = MAX_GAIN): ShortArray {
+    if (samples.isEmpty()) return samples
+    var peak = 0
+    for (v in samples) {
+        val a = abs(v.toInt())
+        if (a > peak) peak = a
+    }
+    if (peak == 0) return samples
+    val target = targetPeak * 32767f
+    val gain = (target / peak).coerceAtMost(maxGain)
+    // Already at or above the target: leave it alone rather than pulling it down. A take recorded
+    // hot is not improved by attenuation, and re-scaling always loses a little to rounding.
+    if (gain <= 1f) return samples
+    val out = ShortArray(samples.size)
+    for (i in samples.indices) {
+        out[i] = (samples[i] * gain).toInt().coerceIn(-32767, 32767).toShort()
+    }
+    return out
+}
+
+/** -0.1 dBFS. Not 0: nothing downstream should have to round in our favour. */
+const val TARGET_PEAK = 0.98855f
+
+/** Twenty decibels. Past this a quiet room becomes a convincing wall of hiss. */
+const val MAX_GAIN = 10f
+
+/**
  * THE WAVEFORM ON THE PAD.
  *
  * A pad that says only "filled" tells you a recording exists. A pad with the shape of the
