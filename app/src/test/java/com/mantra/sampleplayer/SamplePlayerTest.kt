@@ -94,11 +94,21 @@ class SamplePlayerTest {
         }
     }
 
-    @Test fun `long press clears only when stopped and only when there is something to clear`() {
+    @Test fun `long press opens the menu in both stopped and playing`() {
+        // It used to require STOPPED, from when a long press deleted outright. Hearing a cell you
+        // want to edit and then reaching for it did nothing at all.
         assertEquals(Press.Clear(2), Gesture.longPress(Mode.STOPPED, filled(2), 2))
-        assertTrue(Gesture.longPress(Mode.PLAYING, filled(2), 2) is Press.Refused)
+        assertEquals(Press.Clear(2), Gesture.longPress(Mode.PLAYING, filled(2), 2))
+    }
+
+    @Test fun `long press is refused while the microphone is open`() {
+        // A menu covering the screen while recording is a recording nobody can stop.
         assertTrue(Gesture.longPress(Mode.RECORDING, filled(2), 2) is Press.Refused)
+    }
+
+    @Test fun `long press on an empty cell has nothing to open`() {
         assertTrue(Gesture.longPress(Mode.STOPPED, filled(), 2) is Press.Refused)
+        assertTrue(Gesture.longPress(Mode.PLAYING, filled(), 2) is Press.Refused)
     }
 
     // ── THE TRIANGLE ──────────────────────────────────────────────────────────────────────────
@@ -605,6 +615,59 @@ class SamplePlayerTest {
                 n,
                 (0 until Grid.pageCount(n, 1)).sumOf { Paging.slotsOn(it, n, per).count() },
             )
+        }
+    }
+
+    // ── WAVEFORM DETAIL ─────────────────────────────────────────────
+
+    @Test fun `each step of detail is a whole multiple of the base`() {
+        assertEquals(32, waveformBuckets(1))
+        assertEquals(64, waveformBuckets(2))
+        assertEquals(96, waveformBuckets(3))
+        assertEquals(128, waveformBuckets(4))
+    }
+
+    @Test fun `a stored scale outside the range cannot ask for absurd work`() {
+        // A hundred and twenty cells at nine times the base would be a page that takes a second
+        // to open, from a preference nobody set on purpose.
+        assertEquals(waveformBuckets(1), waveformBuckets(0))
+        assertEquals(waveformBuckets(1), waveformBuckets(-5))
+        assertEquals(waveformBuckets(4), waveformBuckets(99))
+    }
+
+    @Test fun `the waveform really returns the number of slices asked for`() {
+        val samples = ShortArray(9_000) { (it % 500).toShort() }
+        for (scale in WAVEFORM_SCALES) {
+            assertEquals(waveformBuckets(scale), waveform(samples, waveformBuckets(scale)).size)
+        }
+    }
+
+    // ── THE TWO POINTS DO NOT UNDO EACH OTHER ─────────────────────────────
+
+    @Test fun `moving the out point keeps the in point that was already set`() {
+        // The bug was in the gesture, not here, but the rule is what the gesture must be fed: a
+        // move of one point is computed from the CURRENT pair, never from a remembered one.
+        val afterIn = Trim.withIn(Trim.NONE, 1_000, 5_000)
+        val afterOut = Trim.withOut(afterIn, 4_000, 5_000)
+        assertEquals(1_000, afterOut.inMs)
+        assertEquals(4_000, afterOut.outMs)
+    }
+
+    @Test fun `moving the in point keeps the out point that was already set`() {
+        val afterOut = Trim.withOut(Trim.NONE, 4_000, 5_000)
+        val afterIn = Trim.withIn(afterOut, 1_000, 5_000)
+        assertEquals(1_000, afterIn.inMs)
+        assertEquals(4_000, afterIn.outMs)
+    }
+
+    @Test fun `a long alternating drag keeps both points`() {
+        var t = Trim.NONE
+        for (round in 1..20) {
+            t = Trim.withIn(t, round * 50, 5_000)
+            t = Trim.withOut(t, 5_000 - round * 50, 5_000)
+            assertTrue("in was lost on round $round", t.inMs > 0)
+            assertTrue("out was lost on round $round", t.outMs > 0)
+            assertTrue(t.inMs < t.endOf(5_000))
         }
     }
 

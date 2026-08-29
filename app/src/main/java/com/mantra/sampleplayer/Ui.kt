@@ -11,6 +11,18 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -94,7 +106,7 @@ fun Tile(
             .padding(horizontal = 4.dp, vertical = 4.dp),
     ) {
         Text(
-            "%02d %s".format(slot.index + 1, slot.title()),
+            "%02d".format(slot.index + 1),
             color = if (slot.hasOriginal) Color.White else Color(0xFF71717A),
             fontSize = 9.sp,
             maxLines = 1,
@@ -103,7 +115,7 @@ fun Tile(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(26.dp)
+                .weight(1f)
                 .drawBehind {
                     // THE WAVEFORM. While recording this is the shape FORMING, live; when stopped
                     // it is the stored recording. A recorder that shows nothing until it stops
@@ -132,7 +144,59 @@ fun Tile(
                         )
                     }
                 },
-        )
+        ) {
+            // THE WORDS OVER THE WAVE.
+            //
+            // An untranscribed cell shows the shape alone: there is nothing to say about it that
+            // it is not already saying. A transcribed cell carries its own sentence, because at
+            // three across the number and the first two words are all that fit in a title, and
+            // the whole point of transcribing is knowing which line this is.
+            //
+            // IT SCROLLS ONLY WHILE THE CELL IS SOUNDING, and only when the sentence is wider
+            // than the cell. Text crawling on twenty-nine silent cells would be the animation
+            // design-language.md 8 rules out — something moving that the eye is pulled towards
+            // with no reason to look. On the one cell that is playing it is the opposite: it is
+            // the thing being listened to.
+            if (slot.words.isNotBlank()) {
+                var textW by remember(slot.words) { mutableStateOf(0) }
+                var boxW by remember { mutableStateOf(0) }
+                val over = (textW - boxW).coerceAtLeast(0)
+                val shift = if (playhead != null && over > 0) {
+                    val move = rememberInfiniteTransition(label = "words")
+                    move.animateFloat(
+                        initialValue = 0f,
+                        targetValue = -over.toFloat(),
+                        animationSpec = infiniteRepeatable(
+                            // Twenty-five milliseconds a pixel is about the pace of reading, and
+                            // the restart is a jump rather than a slide back, so nothing crosses
+                            // the cell in the wrong direction.
+                            animation = tween(over * 25, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart,
+                        ),
+                        label = "shift",
+                    ).value
+                } else {
+                    0f
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clipToBounds()
+                        .onSizeChanged { boxW = it.width },
+                ) {
+                    Text(
+                        slot.words,
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 9.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        fontFamily = FontFamily.Monospace,
+                        onTextLayout = { textW = it.size.width },
+                        modifier = Modifier.offset { IntOffset(shift.toInt(), 0) },
+                    )
+                }
+            }
+        }
     }
 }
 

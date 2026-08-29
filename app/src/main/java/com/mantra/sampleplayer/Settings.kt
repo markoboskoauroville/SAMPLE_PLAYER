@@ -52,7 +52,13 @@ class Prefs(context: Context) {
         get() = sp.getInt(KEY_PAGES, 1).coerceIn(1, slotCount)
         set(value) = sp.edit().putInt(KEY_PAGES, value.coerceIn(1, MAX_SLOTS)).apply()
 
+    /** 1x to 4x. Clamped, because a stored 9 would be a hundred and twenty cells of work. */
+    var waveScale: Int
+        get() = sp.getInt(KEY_WAVE, 1).coerceIn(1, WAVEFORM_SCALES.size)
+        set(value) = sp.edit().putInt(KEY_WAVE, value.coerceIn(1, WAVEFORM_SCALES.size)).apply()
+
     private companion object {
+        const val KEY_WAVE = "wave_scale"
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_SLOT_COUNT = "slot_count"
         const val KEY_PAGES = "page_spread"
@@ -95,6 +101,7 @@ fun SettingsScreen(
     playMode: PlayMode,
     slotCount: Int,
     pageSpread: Int,
+    waveScale: Int,
     usage: Usage,
     keySummary: List<String>,
     keysHeld: Set<String>,
@@ -102,6 +109,7 @@ fun SettingsScreen(
     onPlayMode: (PlayMode) -> Unit,
     onSlotCount: (Int) -> Unit,
     onPageSpread: (Int) -> Unit,
+    onWaveScale: (Int) -> Unit,
     onClearGenerated: () -> Unit,
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
@@ -154,6 +162,24 @@ fun SettingsScreen(
             "${layout.perPage} per page, ${layout.columns} across and ${layout.rows} down. " +
                 "The cells fill the page: one on a page is the size of the page, two are halves.",
         )
+
+        // ── WAVEFORM DETAIL ──────────────────────────────────────────────────────────────────
+        //
+        // A SETTING RATHER THAN A DECISION, because it is a real trade. Every bucket is a scan
+        // over its share of the samples and a rectangle to draw, on up to a hundred and twenty
+        // cells at once, so four times the detail is four times the work every time a page opens.
+        Heading("WAVEFORM DETAIL")
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (n in WAVEFORM_SCALES) {
+                Button(
+                    label = "${n}x",
+                    modifier = Modifier.weight(1f),
+                    solid = waveScale == n,
+                    accent = PLAY_AMBER,
+                ) { onWaveScale(n) }
+            }
+        }
+        Note("${waveformBuckets(waveScale)} slices per cell. Higher is slower to open a page.")
 
         // ── WHAT HAPPENS WHEN A SAMPLE ENDS ──────────────────────────────────────────────────
         Heading("WHEN A SAMPLE ENDS")

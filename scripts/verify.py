@@ -799,6 +799,62 @@ check(
     "a cell called Danas says which cell; Danas je lijep dan says what is in it",
 )
 
+# ── THE EDITOR'S GESTURE READS LIVE STATE ───────────────────────────────
+#
+# The in and out points were undoing each other, and it is the same bug as v3's second tap:
+# pointerInput restarts only when its key changes, so the drag handler held the trim as it was
+# when the editor opened. Each drag was computed from that photograph and handed back a whole new
+# pair, throwing away the other point.
+check(
+    "the editor's drag reads the current trim",
+    "rememberUpdatedState(trim)" in editor_code and "rememberUpdatedState(onTrim)" in editor_code,
+    "a move of one point is computed from the current pair, never a remembered one",
+)
+check(
+    "the drag body cannot see the stale parameter",
+    "Trim.withIn(live," in editor_code and "Trim.withIn(trim," not in editor_code,
+    "both branches go through the live handle",
+)
+
+# ── WAVEFORM DETAIL IS A SETTING ───────────────────────────────────
+check(
+    "the bucket count is derived from the setting",
+    "fun waveformBuckets(" in model_code and "waveformBuckets(scale)" in ui_code,
+    "1x to 4x, clamped, because four times the detail is four times the work per page",
+)
+check(
+    "the editor takes the finest, because it draws one recording",
+    "WAVEFORM_SCALES.last()" in ui_code,
+    "the cost that made this a setting is thirty cells at once",
+)
+
+# ── THE CELL CARRIES ITS OWN SENTENCE ───────────────────────────────
+check(
+    "a transcribed cell shows its words over the wave",
+    "slot.words.isNotBlank()" in tile_code and "clipToBounds" in tile_code,
+    "at three across the number and two words are all a title fits",
+)
+check(
+    "the words scroll only while that cell is sounding",
+    "playhead != null && over > 0" in tile_code,
+    "text crawling on twenty-nine silent cells is the animation the design language rules out",
+)
+
+# ── A LONG PRESS OPENS THE MENU IN EITHER MODE ─────────────────────────
+check(
+    "only recording refuses a long press",
+    "mode == Mode.RECORDING -> Press.Refused" in model_code
+    and "mode != Mode.STOPPED" not in model_code,
+    "a menu is safe to open while a set is playing; it is not safe while the microphone is open",
+)
+
+# ── THE CONTROLS TAKE A CORNER ────────────────────────────────────
+check(
+    "REC no longer takes the whole row",
+    "weight(0.32f)" in ui_code,
+    "a lot of glass for a button pressed once per take, on a screen for showing cells",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -819,7 +875,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 145, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 160, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -831,7 +887,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 116:
+if len(checks_run) < 124:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

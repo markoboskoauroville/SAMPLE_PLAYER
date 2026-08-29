@@ -267,8 +267,18 @@ object Gesture {
      */
     fun longPress(mode: Mode, project: Project, slot: Int): Press = when {
         slot !in project.slots.indices -> Press.Refused("no such slot")
-        mode != Mode.STOPPED -> Press.Refused("stop first")
-        project.slot(slot).isEmpty -> Press.Refused("already empty")
+
+        // A LONG PRESS OPENS THE MENU IN EITHER MODE.
+        //
+        // It used to require STOPPED, from when a long press deleted the recording outright and
+        // refusing during playback stopped you deleting the thing that was sounding. It opens a
+        // menu now, and a menu is safe to open while a set is playing — refusing it meant that
+        // hearing a cell you wanted to edit and then reaching for it did nothing at all.
+        //
+        // RECORDING IS STILL REFUSED, because a menu that covers the screen while the microphone
+        // is open is a recording nobody can stop.
+        mode == Mode.RECORDING -> Press.Refused("stop recording first")
+        project.slot(slot).isEmpty -> Press.Refused("nothing in that cell yet")
         else -> Press.Clear(slot)
     }
 }
@@ -580,3 +590,17 @@ object Needs {
 
 /** Kept for [Follow], which reasons about what is visible rather than about the set. */
 const val SLOTS_ON_SCREEN = 30
+
+/**
+ * HOW FINE THE WAVEFORM IS DRAWN.
+ *
+ * More buckets is more of the shape and more work per frame: every bucket is a scan over its share
+ * of the samples and a rectangle to draw, on up to a hundred and twenty cells at once. On this
+ * phone the base is comfortable and four times it is visibly slower to open a page, which is why
+ * it is a setting rather than a decision made here.
+ */
+val WAVEFORM_SCALES = listOf(1, 2, 3, 4)
+
+const val WAVEFORM_BASE = 32
+
+fun waveformBuckets(scale: Int): Int = WAVEFORM_BASE * scale.coerceIn(1, WAVEFORM_SCALES.size)

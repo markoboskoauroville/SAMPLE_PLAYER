@@ -162,6 +162,7 @@ class MainActivity : ComponentActivity() {
     private fun App() {
         var slotCount by remember { mutableStateOf(prefs.slotCount) }
         var pageSpread by remember { mutableStateOf(prefs.pageSpread) }
+        var waveScale by remember { mutableStateOf(prefs.waveScale) }
         var project by remember { mutableStateOf(load(DEFAULT_PROJECT, slotCount)) }
 
         // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
@@ -239,7 +240,10 @@ class MainActivity : ComponentActivity() {
             var t by remember(editing) { mutableStateOf(Words(this).trim(project.id, editing)) }
             WaveEditor(
                 slot = slotNow,
-                waveform = waveformOf(project.id, editing),
+                // The editor draws one recording across a whole screen, so it always takes
+                // the finest the setting allows: the cost that made this a setting is
+                // thirty cells at once, and here there is one.
+                waveform = waveformOf(project.id, editing, WAVEFORM_SCALES.last()),
                 trim = t,
                 playhead = if (playing == editing) fraction else null,
                 onTrim = {
@@ -473,6 +477,7 @@ class MainActivity : ComponentActivity() {
                 playMode = playMode,
                 slotCount = slotCount,
                 pageSpread = pageSpread,
+                waveScale = waveScale,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
                 keysHeld = keys.all().map { it.providerId }.toSet(),
@@ -484,6 +489,10 @@ class MainActivity : ComponentActivity() {
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
+                },
+                onWaveScale = {
+                    waveScale = it
+                    prefs.waveScale = it
                 },
                 onPageSpread = {
                     pageSpread = it
@@ -579,7 +588,7 @@ class MainActivity : ComponentActivity() {
                         waveform = if (recordingSlot == slot.index) {
                             liveShape
                         } else {
-                            waveformOf(project.id, slot.index)
+                            waveformOf(project.id, slot.index, waveScale)
                         },
                         onPress = {
                             when (val p = Gesture.press(mode, project, slot.index, recordingSlot)) {
@@ -660,14 +669,18 @@ class MainActivity : ComponentActivity() {
                 Modifier.fillMaxWidth().padding(bottom = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                // Seq and Voice used to sit here and did nothing but print a promise. A
-                // control that announces a future version is a control that has to be pressed to
-                // find that out, and it was taking a third of the row. Changing a voice lives on
-                // the cell it belongs to, reached by a long press; there is nothing on the main
-                // screen that needs a global voice button.
+                // THE CONTROLS TAKE A CORNER, NOT A ROW.
+                //
+                // REC was full width, which is a lot of glass for a button pressed once per take,
+                // on a screen whose whole job is showing cells. It is about a fifth of the width
+                // now and it sits bottom right where a thumb already is. Everything it gave up
+                // went to the cells above it.
+                //
+                // Seq and Voice used to be here too and did nothing but print a promise.
+                Spacer(Modifier.weight(1f))
                 Button(
                     label = if (armed == Mode.PLAYING) "PLAY" else "REC",
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(0.32f),
                     solid = true,
                     accent = if (armed == Mode.PLAYING) PLAY_AMBER else RECORDING_RED,
                 ) {
@@ -687,7 +700,7 @@ class MainActivity : ComponentActivity() {
                 }
                 // The gear last, and narrow. It is the control pressed least often in the app and
                 // it sits at the end of the row for that reason, not because there was space left.
-                Button("\u2699", Modifier.width(52.dp)) { showSettings = true }
+                Button("\u2699", Modifier.width(44.dp)) { showSettings = true }
             }
         }
     }
@@ -804,10 +817,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun waveformOf(id: String, slot: Int): FloatArray {
+    private fun waveformOf(id: String, slot: Int, scale: Int = 1): FloatArray {
         val f = Paths.original(filesDir, id, slot)
         if (!f.isFile) return FloatArray(0)
-        return waveform(Recorder.read(f), WAVEFORM_BUCKETS)
+        return waveform(Recorder.read(f), waveformBuckets(scale))
     }
 
     private fun load(id: String, count: Int): Project {
@@ -864,7 +877,6 @@ class MainActivity : ComponentActivity() {
         /** Three across, ten down, which puts the whole set on one screen. */
         const val COLUMNS = 3
 
-        /** Thirty-two, which is what a third of a screen width can show honestly. */
-        const val WAVEFORM_BUCKETS = 32
+        // The bucket count moved out to Model.kt, where the setting that scales it lives.
     }
 }

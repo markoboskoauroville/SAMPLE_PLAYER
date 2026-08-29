@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -60,6 +61,19 @@ fun WaveEditor(
     val length = slot.lengthMs
     var width by remember { mutableStateOf(1f) }
     var draggingIn by remember { mutableStateOf(true) }
+
+    // THE IN AND OUT POINTS WERE UNDOING EACH OTHER, AND IT IS THE SAME BUG AS v3's SECOND TAP.
+    //
+    // `pointerInput` restarts its block only when its key changes, and this one is keyed on the
+    // length of the recording — which never changes while the editor is open. So the drag handler
+    // was built once and captured `trim` AS IT WAS THEN, for ever. Move the in point: the handler
+    // still holds the trim with in at zero. Move the out point next: it computes
+    // `withOut(thatOldTrim, …)` and hands back a whole new pair with the in point back at zero.
+    // Each drag threw away the other one, exactly as described.
+    //
+    // The state was right the entire time. The gesture was reading a photograph of it.
+    val live by rememberUpdatedState(trim)
+    val change by rememberUpdatedState(onTrim)
 
     // Wide enough to see and to put a finger near. Three pixels was neither.
 
@@ -106,14 +120,14 @@ fun WaveEditor(
                         // side of the screen. Left half is the start, right half is the stop, and
                         // it does not change under your finger halfway through.
                         onDragStart = { start -> draggingIn = start.x < width / 2f },
-                    ) { change, _ ->
+                    ) { it, _ ->
                         if (length <= 0 || width <= 1f) return@detectHorizontalDragGestures
-                        val ms = ((change.position.x / width) * length).toInt()
-                        onTrim(
+                        val ms = ((it.position.x / width) * length).toInt()
+                        change(
                             if (draggingIn) {
-                                Trim.withIn(trim, ms, length)
+                                Trim.withIn(live, ms, length)
                             } else {
-                                Trim.withOut(trim, ms, length)
+                                Trim.withOut(live, ms, length)
                             },
                         )
                     }
