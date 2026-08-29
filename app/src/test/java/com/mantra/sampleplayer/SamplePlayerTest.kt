@@ -239,30 +239,41 @@ class SamplePlayerTest {
         assertTrue(j!! <= SLOTS - 8)
     }
 
-    // ── THE CAPTURE STATE MACHINE ─────────────────────────────────────────────────────────────
+    // ── THE SILENCE CEILING ─────────────────────────────────────────
 
-    @Test fun `a capture waits, hears speech, and ends after the hangover`() {
-        val c = Capture()
-        c.begin(0)
-        assertEquals(CaptureState.WAITING, c.update(0.05f, 10))
-        assertEquals(CaptureState.SPEAKING, c.update(0.9f, 100))
-        assertEquals(CaptureState.SPEAKING, c.update(0.05f, 200))
-        assertEquals(CaptureState.DONE, c.update(0.05f, 100 + 600))
+    @Test fun `quiet for less than the ceiling does not end the recording`() {
+        val c = Ceiling(afterMs = 1_000L)
+        assertFalse(c.exceeded(0.05f, 100))
+        assertFalse(c.exceeded(0.05f, 1_099))
     }
 
-    @Test fun `a capture that hears nothing times out rather than hanging`() {
-        val c = Capture()
-        c.begin(0)
-        assertEquals(CaptureState.TIMED_OUT, c.update(0.01f, 5_000))
+    @Test fun `quiet for the whole ceiling ends the recording`() {
+        val c = Ceiling(afterMs = 1_000L)
+        assertFalse(c.exceeded(0.05f, 100))
+        assertTrue(c.exceeded(0.05f, 1_100))
     }
 
-    @Test fun `the window reaches back past the onset so the first consonant survives`() {
-        val c = Capture()
-        c.begin(0)
-        c.update(0.9f, 1_000)
-        // The level crosses only once the word is underway. Reading from the crossing point clips
-        // the front off every recording, and that fault looks like poor transcription.
-        assertTrue(c.windowMs(1_500) >= 500 + Capture.LEAD_MS.toInt() - 1)
+    @Test fun `speech resets the ceiling, so a long pause mid-phrase is safe`() {
+        // A slot left open by mistake must end itself. A person thinking mid-sentence must not.
+        val c = Ceiling(afterMs = 1_000L)
+        assertFalse(c.exceeded(0.05f, 100))
+        assertFalse(c.exceeded(0.90f, 900))
+        assertFalse(c.exceeded(0.05f, 1_500))
+        assertFalse(c.exceeded(0.05f, 1_899))
+        assertTrue(c.exceeded(0.05f, 1_900))
+    }
+
+    @Test fun `the default ceiling is a guard and not an endpointer`() {
+        // Ninety seconds: far past any pause inside a sentence, far short of filling a phone.
+        assertTrue(Ceiling.SILENCE_CEILING_MS >= 60_000L)
+    }
+
+    @Test fun `a reset ceiling counts again from the next quiet moment`() {
+        val c = Ceiling(afterMs = 1_000L)
+        c.exceeded(0.05f, 100)
+        c.reset()
+        assertFalse(c.exceeded(0.05f, 1_100))
+        assertTrue(c.exceeded(0.05f, 2_100))
     }
 
     // ── THE METER MUST NOT LIE ────────────────────────────────────────────────────────────────

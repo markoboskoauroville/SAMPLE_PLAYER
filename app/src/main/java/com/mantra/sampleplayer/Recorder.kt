@@ -44,19 +44,11 @@ object Recorder {
     private val vu = Vu()
 
     /**
-     * THE SILENCE CEILING.
+     * THE SILENCE CEILING LIVES IN [Ceiling], NOT HERE.
      *
-     * Press-to-stop was asked for because these phrases are of unknown length. The obvious failure
-     * of press-to-stop is a slot left open by mistake, and with the app in the background there is
-     * nothing on screen to notice it. So a capture that hears nothing for this long ends itself.
-     *
-     * It is deliberately long. Ninety seconds is far past any pause inside a spoken sentence and
-     * far short of filling a phone.
+     * It used to be four lines inside the reading thread below, where Test 1 could not reach it.
+     * A guard against losing a recording that cannot itself be tested is a guard nobody can trust.
      */
-    const val SILENCE_CEILING_MS = 90_000L
-
-    /** Below this the level counts as silence for the ceiling. Capture.ONSET, same signal. */
-    private const val ONSET = Capture.ONSET
 
     @SuppressLint("MissingPermission")
     fun start(target: File, slotIndex: Int, onEnded: (SampleQuality) -> Unit) {
@@ -96,8 +88,8 @@ object Recorder {
             val buf = ShortArray(minBuf)
             val bytes = ByteArray(minBuf * 2)
             var written = 0L
-            var quietSince = 0L
             val began = System.currentTimeMillis()
+            val ceiling = Ceiling()
             val collected = ArrayList<Short>()
 
             rec.startRecording()
@@ -116,12 +108,7 @@ object Recorder {
                 val now = System.currentTimeMillis()
                 _elapsedMs.value = (now - began).toInt()
 
-                if (lvl >= ONSET) {
-                    quietSince = 0L
-                } else {
-                    if (quietSince == 0L) quietSince = now
-                    if (now - quietSince >= SILENCE_CEILING_MS) running = false
-                }
+                if (ceiling.exceeded(lvl, now)) running = false
 
                 for (i in 0 until n) {
                     val s = buf[i].toInt()

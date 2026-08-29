@@ -5,8 +5,8 @@ import kotlin.math.sqrt
 /**
  * THE TWO PIECES OF THE STOPWATCH'S EAR THAT THIS APP KEEPS.
  *
- * [Vu] is the level a meter draws, smoothed and floored. [Capture] is the state machine that
- * decides when a recording has begun and when it is over.
+ * [Vu] is the level a meter draws, smoothed and floored. [Ceiling] decides when a recording has
+ * been quiet long enough to end itself.
  *
  * Both are pure: fed a level and a clock, importing nothing from Android. That is deliberate
  * and it is the reason this app can be tested at all. Every part of the stopwatch that needed
@@ -74,111 +74,54 @@ class Vu {
 }
 
 /**
- * FIRE ONCE PER UTTERANCE, AND THIS IS THE BUG THE WHOLE FILE EXISTS TO STOP.
+ * THE SILENCE CEILING THAT SITS UNDERNEATH THE PRESS.
  *
- * The listener acts on PARTIAL results, because a stopwatch command that lands half a second
- * late has already missed the thing being timed. But partial results arrive several times for
- * one spoken word: "st", "start", "start" again as the recogniser firms up. Each of those
- * contains the command, so without a gate a single spoken "start" presses play three or four
- * times — and play is a TOGGLE, so the clock would start, pause, start, pause and end up
- * wherever the count of partials left it. It would look like the microphone was possessed.
+ * WHY THE STOPWATCH'S `Capture` IS NOT HERE. It was ported, and then removed, because nothing
+ * reached it. That machine answers "when did this one word end", with a hangover, a maximum
+ * speech length of two seconds and a lead-in that reaches back past the onset. All three are
+ * wrong for this app:
  *
- * TWO RULES, BECAUSE ONE IS NOT ENOUGH:
+ *   - the phrases are of unknown length, so a two second ceiling would cut every one of them
+ *   - recording starts when the tile is PRESSED, not when the level crosses, so there is nothing
+ *     to reach back for. The lead-in exists to stop a first consonant being clipped, and here the
+ *     microphone is already open before the mouth is
+ *   - the end is decided by a second press, not by a hangover
  *
- *   once per utterance   the gate closes on the first match and only [newUtterance] reopens it,
- *                        which the listener calls when it starts listening again
- *   and a minimum gap    because the recogniser restarts every couple of seconds and the tail
- *                        of the same word can land in the next utterance as well
+ * The brief asked for the lead-in to be carried across. It is not, and this is why: it would be a
+ * line of code with nothing to do. Said plainly rather than ported and left inert.
  *
- * It is pure, and it takes the clock as an argument, for the same reason the stopwatch does:
- * every case here can be walked in Test 1 without a microphone.
+ * What remains is one honest job. A slot left recording by mistake, with the app in the
+ * background and nothing on screen to notice it, must not record the room until the disk fills.
+ *
+ * That job was inline in the recorder's reading thread where Test 1 could not reach it. Here it
+ * is a pure function of a level and a clock, which is the only form a rule can be proven in.
  */
-enum class CaptureState { WAITING, SPEAKING, DONE, TIMED_OUT }
+class Ceiling(private val afterMs: Long = SILENCE_CEILING_MS, private val onset: Float = ONSET) {
 
-/**
- * LISTENING FOR ONE WORD AND STOPPING WHEN IT ENDS.
- *
- * The arm button is gone, and so is the fixed second and a half. Pressing a pad starts a capture:
- * it waits for you to begin, records while you speak, and stops when you stop. A fixed length is
- * a worse recording in both directions — it keeps the silence you left at the end if you were
- * quick, and it cuts you off if you were not.
- *
- * FOUR NUMBERS, and each one is a decision rather than a default:
- *
- *   ONSET       the level that counts as speech starting. The same threshold the command gate
- *               uses, because they are answering the same question about the same signal
- *   HANGOVER    how long the level must stay down before the word is over. Too short and it
- *               stops inside the gap in the middle of a word like "re-set"; too long and it
- *               keeps a second of room at the end
- *   MAX_SPEECH  a ceiling, so a noisy room cannot hold a capture open for ever
- *   WAIT        how long to wait for you to start before giving up and saying so
- *
- * It is a pure state machine fed a level and a clock, so all of that is testable without a
- * microphone — which matters here, because every part of this app that needed a microphone to
- * test is the part that took ten versions to get right.
- */
-class Capture(
-    private val onset: Float = ONSET,
-    private val hangoverMs: Long = HANGOVER_MS,
-    private val maxSpeechMs: Long = MAX_SPEECH_MS,
-    private val waitMs: Long = WAIT_MS,
-) {
-    private var startedAt = 0L
-    private var onsetAt = 0L
     private var quietSince = 0L
-    private var state = CaptureState.WAITING
 
-    fun begin(now: Long) {
-        startedAt = now
-        onsetAt = 0L
-        quietSince = 0L
-        state = CaptureState.WAITING
-    }
-
-    fun update(level: Float, now: Long): CaptureState {
-        when (state) {
-            CaptureState.WAITING -> {
-                if (level >= onset) {
-                    onsetAt = now
-                    quietSince = 0L
-                    state = CaptureState.SPEAKING
-                } else if (now - startedAt >= waitMs) {
-                    state = CaptureState.TIMED_OUT
-                }
-            }
-            CaptureState.SPEAKING -> {
-                if (level >= onset) {
-                    quietSince = 0L
-                } else {
-                    if (quietSince == 0L) quietSince = now
-                    if (now - quietSince >= hangoverMs) state = CaptureState.DONE
-                }
-                if (now - onsetAt >= maxSpeechMs) state = CaptureState.DONE
-            }
-            else -> Unit
+    /** True when it has been quiet long enough that the recording should end itself. */
+    fun exceeded(level: Float, now: Long): Boolean {
+        if (level >= onset) {
+            quietSince = 0L
+            return false
         }
-        return state
+        if (quietSince == 0L) quietSince = now
+        return now - quietSince >= afterMs
     }
 
-    /**
-     * How far back to read from the ring, in milliseconds, once the capture is done.
-     *
-     * From a little BEFORE the onset, because the level only crosses the threshold once the word
-     * is already underway — the first consonant is always quieter than the vowel that follows it,
-     * and reading from the crossing point would clip every recording at the front.
-     */
-    fun windowMs(now: Long): Int =
-        ((now - onsetAt) + LEAD_MS).toInt().coerceIn(MIN_WINDOW_MS, MAX_WINDOW_MS)
+    fun reset() {
+        quietSince = 0L
+    }
 
     companion object {
-        const val ONSET = 0.30f
-        const val HANGOVER_MS = 550L
-        const val MAX_SPEECH_MS = 2_000L
-        const val WAIT_MS = 4_000L
+        /**
+         * Ninety seconds. Deliberately long: far past any pause inside a spoken sentence, far
+         * short of filling a phone. It is a guard against forgetting, not an endpointer.
+         */
+        const val SILENCE_CEILING_MS = 90_000L
 
-        /** Reach back past the crossing point to catch the start of the word. */
-        const val LEAD_MS = 250L
-        const val MIN_WINDOW_MS = 400
-        const val MAX_WINDOW_MS = 2_000
+        /** The level that counts as speech. The same threshold the meter is floored against. */
+        const val ONSET = 0.30f
     }
 }

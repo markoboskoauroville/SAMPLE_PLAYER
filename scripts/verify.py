@@ -183,6 +183,23 @@ check(
     f"hits: {hits or 'none'} (file and length only, never the value)",
 )
 
+# ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
+#
+# v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
+# it worked. A test of unreachable code is worse than no test: it reports confidence about a
+# path the app never takes. Every class Test 1 exercises must be reached from the app itself.
+recorder_code = code_only(src["Recorder.kt"])
+check(
+    "the silence ceiling the tests exercise is the one the recorder uses",
+    "Ceiling()" in recorder_code,
+    "Recorder constructs Ceiling rather than repeating its logic inline",
+)
+check(
+    "the recorder does not carry its own copy of the ceiling",
+    "quietSince" not in recorder_code,
+    "the rule exists in exactly one place",
+)
+
 # ── TEST 1 WALKS THE DANGEROUS RULES ──────────────────────────────────────────────────────────
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
