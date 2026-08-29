@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,9 +24,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -163,6 +161,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun App() {
         var slotCount by remember { mutableStateOf(prefs.slotCount) }
+        var pageSpread by remember { mutableStateOf(prefs.pageSpread) }
         var project by remember { mutableStateOf(load(DEFAULT_PROJECT, slotCount)) }
 
         // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
@@ -188,7 +187,8 @@ class MainActivity : ComponentActivity() {
         var engine by remember { mutableStateOf<String?>(null) }
         var voices by remember { mutableStateOf(emptyList<Voice>()) }
         var playMode by remember { mutableStateOf(prefs.playMode) }
-        val pagerState = rememberPagerState(pageCount = { project.pages })
+        val layout = Grid.of(project.size, pageSpread)
+        val pagerState = rememberPagerState(pageCount = { project.pages(pageSpread) })
 
         val level by Recorder.level.collectAsState()
         val liveShape by Recorder.live.collectAsState()
@@ -345,18 +345,12 @@ class MainActivity : ComponentActivity() {
                     work(
                         onStage = { stage = it },
                         job = {
-                            val slotNow = project.slot(openSlot)
-                            if (slotNow.words.isBlank()) {
+                            if (project.slot(openSlot).words.isBlank()) {
                                 setStage("transcribing…")
-                                val wav = Paths.original(filesDir, project.id, openSlot)
-                                when (val t = Transcribe.of(wav, keys.ring("assemblyai"))) {
-                                    is Transcribe.Result.Text -> {
-                                        Words(this@MainActivity).put(project.id, openSlot, t.words)
-                                    }
-                                    is Transcribe.Result.Failed -> {
-                                        setStage(t.why)
-                                        return@work
-                                    }
+                                val said = transcribeSlot(project.id, openSlot)
+                                if (said.isNotBlank()) {
+                                    setStage(said)
+                                    return@work
                                 }
                             }
                             setStage("fetching voices…")
@@ -434,6 +428,16 @@ class MainActivity : ComponentActivity() {
                     editorFor = openSlot
                     optionsFor = null
                 },
+                onTranscribe = {
+                    work({ stage = it }) {
+                        setStage("transcribing…")
+                        val said = transcribeSlot(project.id, openSlot)
+                        runOnUiThread {
+                            project = load(project.id, slotCountNow())
+                            stage = said
+                        }
+                    }
+                },
                 onSave = {
                     pendingSave = Paths.original(filesDir, project.id, openSlot)
                     saveSample.launch("${project.name}-%02d.wav".format(openSlot + 1))
@@ -468,6 +472,7 @@ class MainActivity : ComponentActivity() {
             SettingsScreen(
                 playMode = playMode,
                 slotCount = slotCount,
+                pageSpread = pageSpread,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
                 keysHeld = keys.all().map { it.providerId }.toSet(),
@@ -479,6 +484,10 @@ class MainActivity : ComponentActivity() {
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
+                },
+                onPageSpread = {
+                    pageSpread = it
+                    prefs.pageSpread = it
                 },
                 onSlotCount = {
                     // RAISING THE COUNT REVEALS CELLS; LOWERING IT HIDES THEM. Nothing is deleted
@@ -518,7 +527,8 @@ class MainActivity : ComponentActivity() {
                     // THE PAGE COUNT GOES HERE AND THERE IS NO NEXT BUTTON. Baba's own answer,
                     // after considering splitting a cell into forward and back and rejecting it in
                     // the same breath: put the number somewhere and flip the screen.
-                    val pageLabel = Paging.label(pagerState.currentPage, project.size)
+                    val pageLabel =
+                        Paging.label(pagerState.currentPage, project.size, layout.perPage)
                     if (pageLabel.isNotEmpty()) {
                         append("   ·   ")
                         append(pageLabel)
@@ -538,10 +548,29 @@ class MainActivity : ComponentActivity() {
                 state = pagerState,
                 modifier = Modifier.weight(1f),
             ) { page ->
-              val onThisPage = Paging.slotsOn(page, project.size).map { project.slot(it) }
-              LazyVerticalGrid(columns = GridCells.Fixed(COLUMNS)) {
-                items(onThisPage, key = { it.index }) { slot ->
-                    Tile(
+              // A PAGE IS A FIXED GRID THAT FILLS THE SPACE, not a list that scrolls.
+              //
+              // LazyVerticalGrid gives every cell the height its content asks for and scrolls the
+              // rest. Here the number of rows is known before anything is drawn, so each row takes
+              // an equal share of what is left after the header and the controls, and two cells on
+              // a page really are halves of the page.
+              val onThisPage =
+                  Paging.slotsOn(page, project.size, layout.perPage).map { project.slot(it) }
+              Column(Modifier.fillMaxSize()) {
+                for (rowIndex in 0 until layout.rows) {
+                  Row(Modifier.fillMaxWidth().weight(1f)) {
+                    for (colIndex in 0 until layout.columns) {
+                      val at = rowIndex * layout.columns + colIndex
+                      if (at >= onThisPage.size) {
+                        // An empty place on the last row keeps its share of the width, so the
+                        // cells beside it stay the size of every other cell rather than stretching
+                        // to swallow the gap.
+                        Spacer(Modifier.weight(1f))
+                        continue
+                      }
+                      val slot = onThisPage[at]
+                      Tile(
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
                         slot = slot,
                         playhead = if (playing == slot.index) fraction else null,
                         recording = recordingSlot == slot.index,
@@ -597,7 +626,9 @@ class MainActivity : ComponentActivity() {
                                 else -> Unit
                             }
                         },
-                    )
+                      )
+                    }
+                  }
                 }
               }
             }
@@ -734,6 +765,25 @@ class MainActivity : ComponentActivity() {
                 return@Thread
             }
         }.start()
+    }
+
+    /**
+     * Transcribe one cell and store the words. Returns a reason when it failed, or empty.
+     *
+     * ONE PATH, TWO DOORS. Transcribe is now an action of its own and it is also what happens on
+     * the way to choosing a voice. Two copies of an upload-submit-poll would drift, and the half
+     * that drifted would be the one used less.
+     */
+    private fun transcribeSlot(projectId: String, slot: Int): String {
+        val wav = Paths.original(filesDir, projectId, slot)
+        if (!wav.isFile) return "nothing recorded in that cell"
+        return when (val t = Transcribe.of(wav, keys.ring("assemblyai"))) {
+            is Transcribe.Result.Text -> {
+                Words(this).put(projectId, slot, t.words)
+                ""
+            }
+            is Transcribe.Result.Failed -> t.why
+        }
     }
 
     private fun beginRecording(slot: Int, onDone: (Project, String) -> Unit) {

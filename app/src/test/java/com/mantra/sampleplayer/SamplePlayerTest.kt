@@ -539,28 +539,28 @@ class SamplePlayerTest {
     // ── PAGING ────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `a set that fits one screen is one page`() {
-        assertEquals(1, Paging.pageCount(30))
-        assertEquals(1, Paging.pageCount(1))
+        assertEquals(1, Grid.pageCount(30, 1))
+        assertEquals(1, Grid.pageCount(1, 1))
     }
 
     @Test fun `an empty set still has a screen to look at`() {
-        assertEquals(1, Paging.pageCount(0))
+        assertEquals(1, Grid.pageCount(0, 1))
     }
 
     @Test fun `a set larger than one screen is more pages`() {
-        assertEquals(2, Paging.pageCount(60))
-        assertEquals(4, Paging.pageCount(120))
-        assertEquals(2, Paging.pageCount(31))
+        assertEquals(2, Grid.pageCount(60, 1))
+        assertEquals(4, Grid.pageCount(120, 1))
+        assertEquals(2, Grid.pageCount(31, 1))
     }
 
     @Test fun `the last page is short rather than padded`() {
-        assertEquals(30 until 31, Paging.slotsOn(1, 31))
+        assertEquals(30 until 31, Paging.slotsOn(1, 31, 30))
     }
 
     @Test fun `every offered cell count divides into whole pages of thirty`() {
         // Not required, but if one of these ever leaves a page holding a single cell it should be
         // a decision rather than a surprise.
-        for (n in SLOT_CHOICES) {
+        for (n in listOf(15, 30, 60, 120)) {
             val pages = Paging.pageCount(n)
             assertTrue("$n cells gave $pages pages", pages >= 1)
             assertEquals(n, (0 until pages).sumOf { Paging.slotsOn(it, n).count() })
@@ -568,29 +568,120 @@ class SamplePlayerTest {
     }
 
     @Test fun `a page past the end holds nothing rather than wrapping`() {
-        assertTrue(Paging.slotsOn(5, 30).isEmpty())
+        assertTrue(Paging.slotsOn(5, 30, 30).isEmpty())
     }
 
     @Test fun `a slot knows which page it is on`() {
-        assertEquals(0, Paging.pageOf(0))
-        assertEquals(0, Paging.pageOf(29))
-        assertEquals(1, Paging.pageOf(30))
-        assertEquals(3, Paging.pageOf(119))
+        assertEquals(0, Paging.pageOf(0, 30))
+        assertEquals(0, Paging.pageOf(29, 30))
+        assertEquals(1, Paging.pageOf(30, 30))
+        assertEquals(3, Paging.pageOf(119, 30))
     }
 
     @Test fun `the page label is silent when there is nothing to flip`() {
-        assertEquals("", Paging.label(0, 30))
-        assertEquals("page 1 / 2", Paging.label(0, 60))
-        assertEquals("page 2 / 2", Paging.label(1, 60))
+        assertEquals("", Paging.label(0, 30, 30))
+        assertEquals("page 1 / 2", Paging.label(0, 60, 30))
+        assertEquals("page 2 / 2", Paging.label(1, 60, 30))
     }
 
     @Test fun `no cell is spent on navigation`() {
         // Splitting the last cell into forward and back was considered and rejected: a set of
         // thirty that spends one on navigation is a set of twenty-nine, and the arrow would sit
         // somewhere different on every page.
-        for (n in SLOT_CHOICES) {
+        for (n in listOf(15, 30, 60, 120)) {
             assertEquals(n, (0 until Paging.pageCount(n)).sumOf { Paging.slotsOn(it, n).count() })
         }
+    }
+
+    // ── THE LAYOUT FILLS THE PAGE ─────────────────────────────────────
+
+    @Test fun `one cell on one page is the whole page`() {
+        val l = Grid.of(1, 1)
+        assertEquals(1, l.perPage)
+        assertEquals(1, l.columns)
+        assertEquals(1, l.rows)
+    }
+
+    @Test fun `two cells on one page are halves`() {
+        val l = Grid.of(2, 1)
+        assertEquals(2, l.perPage)
+        assertEquals(2, l.columns)
+        assertEquals(1, l.rows)
+    }
+
+    @Test fun `two cells over two pages are one each`() {
+        val l = Grid.of(2, 2)
+        assertEquals(1, l.perPage)
+        assertEquals(1, l.columns)
+        assertEquals(2, Grid.pageCount(2, 2))
+    }
+
+    @Test fun `four cells are a two by two`() {
+        val l = Grid.of(4, 1)
+        assertEquals(2, l.columns)
+        assertEquals(2, l.rows)
+    }
+
+    @Test fun `thirty cells stay the three across grid that already worked`() {
+        val l = Grid.of(30, 1)
+        assertEquals(3, l.columns)
+        assertEquals(10, l.rows)
+    }
+
+    @Test fun `columns never exceed the cap`() {
+        for (n in 1..MAX_SLOTS) {
+            assertTrue("$n gave ${Grid.of(n, 1).columns}", Grid.of(n, 1).columns <= MAX_COLUMNS)
+            assertTrue(Grid.of(n, 1).columns >= 1)
+        }
+    }
+
+    @Test fun `every cell has a place on the grid`() {
+        for (n in listOf(1, 2, 3, 4, 5, 7, 12, 30, 61, 300)) {
+            for (pages in listOf(1, 2, 3, 7)) {
+                val l = Grid.of(n, pages)
+                assertTrue(
+                    "$n over $pages pages: ${l.rows}x${l.columns} cannot hold ${l.perPage}",
+                    l.rows * l.columns >= l.perPage,
+                )
+            }
+        }
+    }
+
+    @Test fun `the last page is short rather than an empty one being added`() {
+        // Ten over three pages is four, four, two. Rounding the other way leaves a blank page.
+        assertEquals(4, Grid.perPage(10, 3))
+        assertEquals(3, Grid.pageCount(10, 3))
+        assertEquals(2, Paging.slotsOn(2, 10, 4).count())
+    }
+
+    @Test fun `more pages than cells cannot produce an empty page`() {
+        assertEquals(1, Grid.perPage(3, 99))
+        assertEquals(3, Grid.pageCount(3, 99))
+    }
+
+    @Test fun `every cell appears on exactly one page`() {
+        for (n in listOf(1, 5, 12, 30, 61, 120)) {
+            for (pages in listOf(1, 2, 4)) {
+                val per = Grid.perPage(n, pages)
+                val seen = (0 until Grid.pageCount(n, pages)).flatMap { Paging.slotsOn(it, n, per) }
+                assertEquals("$n over $pages pages", (0 until n).toList(), seen)
+            }
+        }
+    }
+
+    @Test fun `adding cells does not move the ones already there`() {
+        // Raising the count appends. A cell that was fourth must still be fourth, because there is
+        // a recording in it and its number is how it is known.
+        val before = (0 until Grid.pageCount(12, 2)).flatMap { Paging.slotsOn(it, 12, Grid.perPage(12, 2)) }
+        val after = (0 until Grid.pageCount(20, 2)).flatMap { Paging.slotsOn(it, 20, Grid.perPage(20, 2)) }
+        assertEquals(before, after.take(before.size).sorted().take(before.size))
+        assertTrue(after.containsAll(before))
+    }
+
+    // ── THE TITLE IS WHAT WAS SAID ───────────────────────────────────
+
+    @Test fun `a transcribed cell is titled with the whole sentence`() {
+        assertEquals("Danas je lijep dan", Slot(0, words = "  Danas je lijep dan  ").title())
     }
 
     // ── A SET IS NOT ALWAYS THIRTY ────────────────────────────────────────────────────────────
@@ -625,8 +716,8 @@ class SamplePlayerTest {
         assertEquals("Title 30", Slot(29).title())
     }
 
-    @Test fun `a transcribed slot is called by its first word`() {
-        assertEquals("Danas", Slot(0, words = "  Danas je lijep dan ").title())
+    @Test fun `a transcribed slot is called by what was said`() {
+        assertEquals("Danas je lijep dan", Slot(0, words = "  Danas je lijep dan ").title())
     }
 
     @Test fun `whitespace-only words fall back to the number`() {

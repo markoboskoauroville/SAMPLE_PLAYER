@@ -47,6 +47,7 @@ fun SlotOptions(
     onEdit: () -> Unit,
     onSave: () -> Unit,
     onLoop: () -> Unit,
+    onTranscribe: () -> Unit,
     onEngine: (String) -> Unit,
     onPreview: (Voice) -> Unit,
     onUse: (Voice) -> Unit,
@@ -88,6 +89,24 @@ fun SlotOptions(
                 modifier = Modifier.padding(bottom = 8.dp),
             )
         }
+
+        // ── TRANSCRIBE ───────────────────────────────────────────────────────────────────────
+        //
+        // ITS OWN ACTION NOW, NOT A SIDE EFFECT OF CHOOSING A VOICE. It still happens on the way
+        // to a voice when it has to, so nobody is made to do it twice — but asking for it
+        // directly is a different thing being asked for. What comes back is the title of the cell,
+        // in full: a cell called "Danas" tells you which cell it is, and a cell called "Danas je
+        // lijep dan" tells you what is in it.
+        Button("Transcribe this cell", Modifier.fillMaxWidth()) { onTranscribe() }
+        Text(
+            "The words become the title of the cell, exactly as spoken.",
+            color = Color(0xFF71717A),
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        Spacer(Modifier.height(12.dp))
 
         // ── LOOP ─────────────────────────────────────────────────────────────────────────────
         Button(

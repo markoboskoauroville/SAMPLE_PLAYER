@@ -18,23 +18,66 @@ package com.mantra.sampleplayer
  */
 const val DEFAULT_SLOTS = 30
 
-/** What may be chosen. Not a free number: a text field is a keyboard, and this app is dictated. */
-val SLOT_CHOICES = listOf(15, 30, 60, 120)
+/**
+ * The range a set may be.
+ *
+ * v5 offered four fixed sizes on the grounds that a text field is a keyboard. That was solving the
+ * wrong half: the objection is to TYPING, not to choosing a number, and plus and minus is a number
+ * without a keyboard. Four buttons meant a set of twelve lines had to be a set of fifteen.
+ */
+const val MIN_SLOTS = 1
+const val MAX_SLOTS = 300
 
 /**
- * ONE SCREENFUL, AND IT IS THE UNIT OF PAGING.
+ * THE CELLS FILL THE PAGE, AND HOW MANY PAGES IS A CHOICE.
  *
- * Three across and ten down is what fits on this phone without scrolling, which is why thirty
- * looked right in the first place. A page is that, and a set larger than one page is flipped
- * sideways rather than scrolled.
+ * v10 had a fixed screenful of thirty and everything else scrolled or left a hole. A set of twelve
+ * showed twelve small tiles and two thirds of a black screen, which is a phone being wasted.
  *
- * If a page does not fit some other screen it scrolls, which is a worse day than flipping but not
- * a broken one. Measuring the available height and choosing the row count from it would be more
- * correct and is not built, because it has not been needed on the only phone this runs on.
+ * So the person says how many cells and how many pages, and the layout falls out: one cell on one
+ * page is a cell the size of the page, two are halves, thirty are the three-across grid that was
+ * already there. Nothing scrolls, because the page is the unit and the tiles stretch to fill it.
  */
-const val PAGE_ROWS = 10
-const val COLUMNS = 3
-const val PAGE_SIZE = PAGE_ROWS * COLUMNS
+const val MAX_COLUMNS = 3
+
+data class Layout(val perPage: Int, val columns: Int, val rows: Int)
+
+object Grid {
+
+    /**
+     * How many cells land on one page, given the whole set and how many pages it is spread over.
+     *
+     * The last page is short rather than padded, so a set of ten over three pages is four, four,
+     * two. Rounding the other way would leave a whole empty page at the end.
+     */
+    fun perPage(total: Int, pages: Int): Int {
+        val t = total.coerceAtLeast(1)
+        val p = pages.coerceIn(1, t)
+        return ((t + p - 1) / p).coerceAtLeast(1)
+    }
+
+    /**
+     * COLUMNS: THE SQUARE ROOT, CAPPED AT THREE.
+     *
+     * Square-ish is what fills a rectangle without leaving a strip, and the cap is what keeps
+     * thirty cells as the three-across grid that already works on this phone rather than
+     * re-flowing it to six across and five down. One cell is one column, two are two, four are a
+     * two by two, thirty are three by ten.
+     */
+    fun of(total: Int, pages: Int): Layout {
+        val per = perPage(total, pages)
+        val columns = kotlin.math.ceil(kotlin.math.sqrt(per.toDouble())).toInt()
+            .coerceIn(1, MAX_COLUMNS)
+        val rows = ((per + columns - 1) / columns).coerceAtLeast(1)
+        return Layout(per, columns, rows)
+    }
+
+    /** How many pages a set actually needs at this spread. Never fewer than one. */
+    fun pageCount(total: Int, pages: Int): Int {
+        val per = perPage(total, pages)
+        return ((total.coerceAtLeast(1) + per - 1) / per).coerceAtLeast(1)
+    }
+}
 
 /**
  * WHICH PRESS MEANS WHAT.
@@ -111,8 +154,14 @@ data class Slot(
      * first word of what was said is the shortest thing that tells them apart.
      */
     fun title(): String {
-        val first = words.trim().split(Regex("\\s+")).firstOrNull().orEmpty()
-        return if (first.isEmpty()) "Title %02d".format(index + 1) else first
+        // THE WHOLE SENTENCE, NOT THE FIRST WORD.
+        //
+        // The brief said first word and that was right while transcription was a side effect of
+        // choosing a voice: a cell needed something short to be called. Transcribing is now a
+        // thing asked for on its own, and what it is asked for IS the words. A cell titled "Danas"
+        // tells you which cell; a cell titled "Danas je lijep dan" tells you what is in it.
+        val said = words.trim()
+        return if (said.isEmpty()) "Title %02d".format(index + 1) else said
     }
 
     /** Whether this slot has audio from a named engine, so a line knows what it will play. */
@@ -147,7 +196,7 @@ data class Project(
      * count somewhere and flip the screen. A control that steals a cell to navigate between cells
      * costs one of the thirty things the screen is for.
      */
-    val pages: Int get() = Paging.pageCount(size)
+    fun pages(spread: Int): Int = Grid.pageCount(size, spread)
 
     /**
      * The running order actually played.
@@ -330,7 +379,7 @@ object Follow {
         if (playing in firstVisible..last) return null
         // Put the playing line one row down from the top, so the next few are visible too and the
         // person can see what is coming rather than only what is sounding.
-        return (playing - 1).coerceIn(0, (PAGE_SIZE - visibleCount).coerceAtLeast(0))
+        return (playing - 1).coerceIn(0, (SLOTS_ON_SCREEN - visibleCount).coerceAtLeast(0))
     }
 }
 
@@ -395,13 +444,13 @@ data class GeneratePlan(val ready: List<Int>, val skipped: List<Int>) {
 object Paging {
 
     /** Never fewer than one page, so an empty project still has a screen to look at. */
-    fun pageCount(total: Int, perPage: Int = PAGE_SIZE): Int {
+    fun pageCount(total: Int, perPage: Int): Int {
         if (perPage <= 0) return 1
         return ((total + perPage - 1) / perPage).coerceAtLeast(1)
     }
 
     /** The slot indices on [page], zero-based. The last page is short rather than padded. */
-    fun slotsOn(page: Int, total: Int, perPage: Int = PAGE_SIZE): IntRange {
+    fun slotsOn(page: Int, total: Int, perPage: Int): IntRange {
         if (perPage <= 0 || total <= 0) return IntRange.EMPTY
         val from = page * perPage
         if (from >= total) return IntRange.EMPTY
@@ -409,11 +458,11 @@ object Paging {
     }
 
     /** Which page a slot is on, so the playhead and the triangle can bring it into view. */
-    fun pageOf(slot: Int, perPage: Int = PAGE_SIZE): Int =
+    fun pageOf(slot: Int, perPage: Int): Int =
         if (perPage <= 0) 0 else slot / perPage
 
     /** "2 / 4", or empty when the whole set is one screen and there is nothing to flip. */
-    fun label(page: Int, total: Int, perPage: Int = PAGE_SIZE): String {
+    fun label(page: Int, total: Int, perPage: Int): String {
         val pages = pageCount(total, perPage)
         return if (pages <= 1) "" else "page ${page + 1} / $pages"
     }
@@ -528,3 +577,6 @@ object Needs {
         }
     }
 }
+
+/** Kept for [Follow], which reasons about what is visible rather than about the set. */
+const val SLOTS_ON_SCREEN = 30

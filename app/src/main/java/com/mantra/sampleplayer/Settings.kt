@@ -3,6 +3,8 @@ package com.mantra.sampleplayer
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -39,18 +41,21 @@ class Prefs(context: Context) {
      * How many cells the set has. Sanitised against the offered list rather than trusted, so a
      * corrupt or hand-edited preference cannot produce a project of minus four slots.
      */
+    /** How many cells. Clamped to the range rather than trusted, so a corrupt value cannot make
+     *  a project of minus four slots. */
     var slotCount: Int
-        get() {
-            val stored = sp.getInt(KEY_SLOT_COUNT, DEFAULT_SLOTS)
-            return if (stored in SLOT_CHOICES) stored else DEFAULT_SLOTS
-        }
-        set(value) {
-            if (value in SLOT_CHOICES) sp.edit().putInt(KEY_SLOT_COUNT, value).apply()
-        }
+        get() = sp.getInt(KEY_SLOT_COUNT, DEFAULT_SLOTS).coerceIn(MIN_SLOTS, MAX_SLOTS)
+        set(value) = sp.edit().putInt(KEY_SLOT_COUNT, value.coerceIn(MIN_SLOTS, MAX_SLOTS)).apply()
+
+    /** How many pages to spread them over. Never more pages than cells. */
+    var pageSpread: Int
+        get() = sp.getInt(KEY_PAGES, 1).coerceIn(1, slotCount)
+        set(value) = sp.edit().putInt(KEY_PAGES, value.coerceIn(1, MAX_SLOTS)).apply()
 
     private companion object {
         const val KEY_PLAY_MODE = "play_mode"
         const val KEY_SLOT_COUNT = "slot_count"
+        const val KEY_PAGES = "page_spread"
     }
 }
 
@@ -89,12 +94,14 @@ private fun Note(text: String) {
 fun SettingsScreen(
     playMode: PlayMode,
     slotCount: Int,
+    pageSpread: Int,
     usage: Usage,
     keySummary: List<String>,
     keysHeld: Set<String>,
     onKeys: () -> Unit,
     onPlayMode: (PlayMode) -> Unit,
     onSlotCount: (Int) -> Unit,
+    onPageSpread: (Int) -> Unit,
     onClearGenerated: () -> Unit,
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
@@ -120,33 +127,32 @@ fun SettingsScreen(
             modifier = Modifier.padding(vertical = 10.dp),
         )
 
-        // ── HOW MANY CELLS ───────────────────────────────────────────────────────────────────
+        // ── HOW MANY CELLS, AND OVER HOW MANY PAGES ──────────────────────────────────────────
         //
-        // Buttons rather than a number field. A text field is a keyboard, and this app is dictated
-        // by somebody who does not type.
+        // PLUS AND MINUS, NOT A MENU OF FOUR SIZES. v5 offered 15, 30, 60 and 120 on the grounds
+        // that a text field is a keyboard. The objection is to typing, not to choosing a number,
+        // and a stepper is a number without a keyboard. Four fixed sizes meant a set of twelve
+        // lines had to be a set of fifteen.
         Heading("CELLS")
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            for (n in SLOT_CHOICES) {
-                Button(
-                    label = n.toString(),
-                    modifier = Modifier.weight(1f),
-                    solid = slotCount == n,
-                    accent = PLAY_AMBER,
-                ) { onSlotCount(n) }
-            }
-        }
-        Note(
-            if (slotCount <= PAGE_SIZE) {
-                "One screen. Nothing to flip."
-            } else {
-                "${Paging.pageCount(slotCount)} screens. Flip sideways to reach them; the page " +
-                    "number is in the line at the top."
-            },
+        Stepper(
+            value = slotCount,
+            onChange = { onSlotCount(it.coerceIn(MIN_SLOTS, MAX_SLOTS)) },
+            step = 1,
+            bigStep = 10,
         )
+        Note("Raising this adds cells at the end. Nothing already recorded moves or is lost.")
+
+        Heading("PAGES")
+        Stepper(
+            value = pageSpread,
+            onChange = { onPageSpread(it.coerceIn(1, slotCount)) },
+            step = 1,
+            bigStep = 5,
+        )
+        val layout = Grid.of(slotCount, pageSpread)
         Note(
-            "Lowering this hides cells, it does not delete them. Raise it again and the " +
-                "recordings are still there. The storage figures below count everything on the " +
-                "phone, hidden or not.",
+            "${layout.perPage} per page, ${layout.columns} across and ${layout.rows} down. " +
+                "The cells fill the page: one on a page is the size of the page, two are halves.",
         )
 
         // ── WHAT HAPPENS WHEN A SAMPLE ENDS ──────────────────────────────────────────────────
@@ -271,5 +277,33 @@ fun SettingsScreen(
         Spacer(Modifier.height(20.dp))
         Button("Back", Modifier.fillMaxWidth()) { onBack() }
         Spacer(Modifier.height(20.dp))
+    }
+}
+
+/**
+ * A NUMBER WITHOUT A KEYBOARD.
+ *
+ * Two steps in each direction rather than one: nudging a set from thirty to sixty one press at a
+ * time is thirty presses, and the person doing it dictates rather than types precisely because
+ * that kind of work is expensive for him.
+ */
+@Composable
+fun Stepper(value: Int, onChange: (Int) -> Unit, step: Int, bigStep: Int) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Button("−$bigStep", Modifier.weight(1f)) { onChange(value - bigStep) }
+        Button("−$step", Modifier.weight(1f)) { onChange(value - step) }
+        Box(
+            Modifier.weight(1.4f).height(42.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                value.toString(),
+                color = Color.White,
+                fontSize = 16.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+        Button("+$step", Modifier.weight(1f)) { onChange(value + step) }
+        Button("+$bigStep", Modifier.weight(1f)) { onChange(value + bigStep) }
     }
 }

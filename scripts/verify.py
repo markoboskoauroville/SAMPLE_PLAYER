@@ -140,9 +140,14 @@ check(
     "a fifteen-cell set ends at fifteen, not at thirty",
 )
 check(
-    "a chosen cell count is sanitised against the offered list",
-    "in SLOT_CHOICES" in settings_code,
-    "a hand-edited preference must not produce a project of minus four slots",
+    "a chosen cell count is clamped to the range",
+    "coerceIn(MIN_SLOTS, MAX_SLOTS)" in settings_code,
+    "the four fixed sizes became a free number, so the guard became a clamp",
+)
+check(
+    "the page spread can never exceed the number of cells",
+    "coerceIn(1, slotCount)" in settings_code,
+    "more pages than cells is a set with an empty screen in the middle of it",
 )
 
 # ── PAGING, AND NO CELL SPENT ON IT ───────────────────────────────────────────────────────────
@@ -256,10 +261,27 @@ check(
 )
 
 # ── THE GRID ─────────────────────────────────────────────────────
+# THE CELLS FILL THE PAGE. A fixed screenful of thirty meant a set of twelve showed twelve small
+# tiles and two thirds of a black screen, which is a phone being wasted.
 check(
-    "the set is three across so all thirty fit on one screen",
-    "const val COLUMNS = 3" in ui_code and "GridCells.Fixed(COLUMNS)" in ui_code,
-    "ten rows of three, and the column count is written once",
+    "the layout is derived, not fixed",
+    "object Grid" in model_code and "fun of(total: Int, pages: Int)" in model_code,
+    "how many cells and how many pages decide the rest",
+)
+check(
+    "a page fills its space rather than scrolling",
+    "LazyVerticalGrid" not in ui_code and "layout.rows" in ui_code and "weight(1f)" in ui_code,
+    "the row count is known before anything is drawn, so each row takes an equal share",
+)
+check(
+    "three across is a ceiling, not a constant",
+    "MAX_COLUMNS" in model_code and "coerceIn(1, MAX_COLUMNS)" in model_code,
+    "one cell is one column, four are a two by two, thirty stay three by ten",
+)
+check(
+    "a gap on the last row keeps its share of the width",
+    "Spacer(Modifier.weight(1f))" in ui_code,
+    "otherwise the cells beside it stretch and stop matching every other cell",
 )
 
 # ── THE MODE IS A CONTROL, NOT A SIDE EFFECT ──────────────────────────────
@@ -760,6 +782,23 @@ check(
     "the screen is longer than the phone and the way out was a scroll away",
 )
 
+# ── TRANSCRIBE IS AN ACTION AND ALSO A STEP, THROUGH ONE PATH ──────────────────
+check(
+    "transcription lives in one function",
+    ui_code.count("Transcribe.of(") == 1 and "fun transcribeSlot(" in ui_code,
+    "two copies of upload-submit-poll would drift, and the used-less half would be the drifted one",
+)
+check(
+    "a cell can be transcribed on its own",
+    "onTranscribe" in ui_code and "Transcribe this cell" in options_code,
+    "asking for the words is a different thing from asking for a voice",
+)
+check(
+    "the title is what was said, in full",
+    "val said = words.trim()" in model_code,
+    "a cell called Danas says which cell; Danas je lijep dan says what is in it",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -792,7 +831,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 110:
+if len(checks_run) < 116:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))
