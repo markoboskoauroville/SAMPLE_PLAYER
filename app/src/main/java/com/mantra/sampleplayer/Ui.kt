@@ -31,32 +31,39 @@ private val EMPTY_EDGE = Color(0xFF3F3F46)
 private val FILLED_EDGE = Color(0xFFE8A64B)
 private val WAVE = Color(0xFF94A3B8)
 private val PLAYHEAD = Color(0xFFFDE68A)
-private val RECORDING = Color(0xFFEF4444)
+val RECORDING_RED = Color(0xFFEF4444)
+val PLAY_AMBER = Color(0xFFE8A64B)
 
 /**
- * ONE OF THE THIRTY.
+ * ONE OF THE THIRTY, THREE ACROSS.
  *
- * Title on the left, waveform filling the rest, playhead crossing the waveform. The line is the
- * player: without the mark it is a picture of a recording, with it you can see where you are.
+ * v1 built these as thirty full-width lines, arguing from `MINIMALIST_STOPWATCH` v17 that a grid
+ * of small squares reads as a keypad while a full-width line reads as a sample list. On the phone
+ * that was wrong, and the phone is the authority: fourteen rows visible out of thirty, and four
+ * screens of scrolling to reach the end, in an app whose whole point is filling slots quickly.
+ * Ten rows of three fits the entire set on one screen.
+ *
+ * WHAT IT COSTS, said plainly rather than buried: the waveform drops from 96 buckets to 32. That
+ * is the resolution v17 objected to. The argument was not wrong, it was outweighed.
  */
 @Composable
-fun Line(
+fun Tile(
     slot: Slot,
     playhead: Float?,
     recording: Boolean,
     waveform: FloatArray,
+    modifier: Modifier = Modifier,
     onPress: () -> Unit,
     onLongPress: () -> Unit,
 ) {
     val edge = when {
-        recording -> RECORDING
+        recording -> RECORDING_RED
         slot.hasOriginal -> FILLED_EDGE
         else -> EMPTY_EDGE
     }
     Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp)
+        modifier
+            .padding(2.dp)
             .border(1.dp, edge)
             .pointerInput(slot.index) {
                 detectTapGestures(
@@ -64,37 +71,38 @@ fun Line(
                     onLongPress = { onLongPress() },
                 )
             }
-            .padding(horizontal = 8.dp, vertical = 5.dp),
+            .padding(horizontal = 4.dp, vertical = 4.dp),
     ) {
         Text(
-            "%02d  %s".format(slot.index + 1, slot.title()),
+            "%02d %s".format(slot.index + 1, slot.title()),
             color = if (slot.hasOriginal) Color.White else Color(0xFF71717A),
-            fontSize = 12.sp,
+            fontSize = 9.sp,
+            maxLines = 1,
             fontFamily = FontFamily.Monospace,
         )
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(28.dp)
+                .height(26.dp)
                 .drawBehind {
-                    // THE WAVEFORM. Ninety-six buckets, which is what a full-width line allows.
-                    // A pad that says only "filled" tells you a recording exists; a pad with the
-                    // shape on it tells you WHICH recording, and whether what you captured was a
-                    // word at all or a cough at one end and silence at the other.
+                    // THE WAVEFORM. While recording this is the shape FORMING, live; when stopped
+                    // it is the stored recording. A recorder that shows nothing until it stops
+                    // asks you to talk into a hole and find out afterwards. The meter says audio
+                    // is arriving; only the shape says what arrived.
                     if (waveform.isNotEmpty()) {
                         val w = size.width / waveform.size
                         for (i in waveform.indices) {
                             val h = (waveform[i] * size.height).coerceAtLeast(1f)
                             drawRect(
-                                color = WAVE,
+                                color = if (recording) RECORDING_RED else WAVE,
                                 topLeft = Offset(i * w, (size.height - h) / 2f),
-                                size = Size(w * 0.7f, h),
+                                size = Size((w * 0.7f).coerceAtLeast(1f), h),
                             )
                         }
                     }
-                    // THE PLAYHEAD. A thin vertical mark crossing this line's own waveform. When
-                    // the sample ends it leaves this line and appears at the start of the next, so
-                    // over a full play it travels down the whole set.
+                    // THE PLAYHEAD. A thin vertical mark crossing this tile's own waveform. When
+                    // the sample ends it leaves this tile and appears at the start of the next, so
+                    // over a full play the mark travels down the whole set.
                     if (playhead != null) {
                         val x = playhead.coerceIn(0f, 1f) * size.width
                         drawRect(
@@ -110,15 +118,26 @@ fun Line(
 
 /** A control is a rectangle with a word in it. Nothing here needs to be more than that. */
 @Composable
-fun Button(label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+fun Button(
+    label: String,
+    modifier: Modifier = Modifier,
+    solid: Boolean = false,
+    accent: Color = Color(0xFF52525B),
+    onClick: () -> Unit,
+) {
     Box(
         modifier
-            .height(44.dp)
-            .background(Color.Black)
-            .border(1.dp, Color(0xFF52525B))
+            .height(42.dp)
+            .background(if (solid) accent else Color.Black)
+            .border(1.dp, accent)
             .pointerInput(label) { detectTapGestures(onTap = { onClick() }) },
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, color = Color.White, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
+        Text(
+            label,
+            color = if (solid) Color.Black else Color.White,
+            fontSize = 13.sp,
+            fontFamily = FontFamily.Monospace,
+        )
     }
 }

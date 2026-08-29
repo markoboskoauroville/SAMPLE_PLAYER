@@ -183,6 +183,62 @@ check(
     f"hits: {hits or 'none'} (file and length only, never the value)",
 )
 
+# ── THE APP DRAWS INSIDE THE SAFE AREA ────────────────────────────────────
+#
+# v1 put the project name under the clock and the action row under the navigation buttons, so the
+# widest control in the app was the one hardest to press. Targeting SDK 35 means edge-to-edge is
+# not opt-in, so the padding has to be asked for, and it has to come from the system rather than
+# from a number somebody typed after looking at one phone.
+check(
+    "the layout takes the system insets",
+    "safeDrawingPadding()" in ui_code,
+    "the root column is padded by what the system reports, not by a constant",
+)
+check(
+    "no hard-coded status bar or navigation bar height",
+    "24.dp)" not in ui_code or "statusBar" not in ui_code,
+    "a phone with the camera hole somewhere else is not ours to guess at",
+)
+
+# ── THE GRID ─────────────────────────────────────────────────────
+check(
+    "the set is three across so all thirty fit on one screen",
+    "const val COLUMNS = 3" in ui_code and "GridCells.Fixed(COLUMNS)" in ui_code,
+    "ten rows of three, and the column count is written once",
+)
+
+# ── THE MODE IS A CONTROL, NOT A SIDE EFFECT ──────────────────────────────
+#
+# The difference between a press that seeks and a press that records over a take must be named on
+# screen. With thirty small tiles the target is smaller and the consequence is unchanged.
+check(
+    "there is a visible REC/PLAY toggle",
+    '"PLAY" else "REC"' in ui_code,
+    "the toggle is labelled with what it will do",
+)
+check(
+    "flipping the toggle stops whatever the old mode was doing",
+    "Recorder.stop()" in ui_code and "armed =" in ui_code,
+    "a recording left running while the app calls itself a player is a press in the wrong branch",
+)
+
+# ── THE WAVEFORM FORMS WHILE RECORDING ─────────────────────────────────
+check(
+    "the recorder publishes the shape as it arrives",
+    "val live: StateFlow<FloatArray>" in code_only(src["Recorder.kt"]),
+    "a recorder that shows nothing until it stops asks you to talk into a hole",
+)
+check(
+    "the recording tile draws the live shape rather than the file on disk",
+    "liveShape" in ui_code,
+    "the file does not exist yet while the take is running",
+)
+check(
+    "the live shape is bounded",
+    "LIVE_MAX" in code_only(src["Recorder.kt"]),
+    "an unbounded array on a ninety second ceiling is a leak with a clock on it",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -216,7 +272,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 18:
+if len(checks_run) < 28:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

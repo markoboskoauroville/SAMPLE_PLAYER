@@ -37,6 +37,23 @@ object Recorder {
     private val _elapsedMs = MutableStateFlow(0)
     val elapsedMs: StateFlow<Int> = _elapsedMs
 
+    private val _live = MutableStateFlow(FloatArray(0))
+
+    /**
+     * THE WAVEFORM AS IT FORMS, so the tile shows the recording rather than a blank box.
+     *
+     * A recorder that shows nothing until it stops asks you to talk into a hole and find out
+     * afterwards. The level meter says audio is arriving; only the shape says what arrived. On the
+     * phone, with the tile in front of you, this is the difference between knowing the take was
+     * good and pressing play to find out.
+     *
+     * ONE PEAK PER READ BLOCK, not one per sample. A block is about 250ms at this buffer size, so
+     * a ninety second ceiling is under four hundred values and the array never needs trimming
+     * during a normal take. Past [LIVE_MAX] it drops every other value and halves the rate, which
+     * is the same thing a waveform does when it is drawn narrower.
+     */
+    val live: StateFlow<FloatArray> = _live
+
     private var record: AudioRecord? = null
     private var worker: Thread? = null
     @Volatile private var running = false
@@ -78,6 +95,7 @@ object Recorder {
         running = true
         _slot.value = slotIndex
         _elapsedMs.value = 0
+        _live.value = FloatArray(0)
         vu.reset()
 
         worker = thread(name = "sample-recorder") {
@@ -90,6 +108,7 @@ object Recorder {
             var written = 0L
             val began = System.currentTimeMillis()
             val ceiling = Ceiling()
+            val shape = ArrayList<Float>(LIVE_MAX)
             val collected = ArrayList<Short>()
 
             rec.startRecording()
@@ -104,6 +123,19 @@ object Recorder {
                 }
                 val lvl = vu.fromPeak(peak)
                 _level.value = lvl
+
+                // The shape so far. Raw peak rather than the smoothed meter value: the meter is
+                // smoothed so it is watchable, and a smoothed waveform is a lie about what was
+                // recorded.
+                shape.add((peak / 32767f).coerceIn(0f, 1f))
+                if (shape.size > LIVE_MAX) {
+                    val halved = ArrayList<Float>(LIVE_MAX / 2 + 1)
+                    var i = 0
+                    while (i < shape.size) { halved.add(shape[i]); i += 2 }
+                    shape.clear()
+                    shape.addAll(halved)
+                }
+                _live.value = shape.toFloatArray()
 
                 val now = System.currentTimeMillis()
                 _elapsedMs.value = (now - began).toInt()
@@ -127,7 +159,8 @@ object Recorder {
             writeWavHeader(raf, written)
             raf.close()
 
-            _level.value = 0f
+                _level.value = 0f
+            _live.value = FloatArray(0)
             _slot.value = null
             record = null
 
@@ -172,6 +205,9 @@ object Recorder {
         raf.write(le32(dataBytes))
         if (dataBytes > 0) raf.seek(44 + dataBytes)
     }
+
+    /** Past this many live values the shape is halved rather than grown without a bound. */
+    const val LIVE_MAX = 512
 
     /** Read a WAV back as samples, for the waveform and the quality check. */
     fun read(file: File): ShortArray {

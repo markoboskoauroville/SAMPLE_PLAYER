@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -36,17 +38,19 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import java.io.File
 
 /**
- * THE MAIN VIEW: THIRTY FULL-WIDTH LINES, SCROLLING.
+ * THE MAIN VIEW: TEN ROWS OF THREE.
  *
- * NOT a three across grid, and that is a correction to the brief rather than an oversight.
- * `MINIMALIST_STOPWATCH` v17 replaced a three by three pad grid with nine full-width lines and
- * recorded why: a grid of small squares reads as a keypad, a full-width line reads as a sample
- * list, and the width is what allows a waveform at 96 buckets instead of 28. Three across at
- * thirty tiles is under 130dp per tile on this phone, which is narrower than the pads that
- * decision rejected.
+ * v1 shipped thirty full-width lines and it was wrong on glass. See `Tile` for the reasoning and
+ * for what the change costs.
+ *
+ * IT DRAWS INSIDE THE SAFE AREA. v1 went edge to edge, which on Android 15 is not a choice — an
+ * app targeting SDK 35 is handed the whole display including the status bar and the gesture bar.
+ * The project name ended up underneath the clock and the action row underneath the navigation
+ * buttons, so the widest control in the app was the one hardest to press. `safeDrawingPadding`
+ * takes the insets the system reports rather than a hard-coded number, because a phone with a
+ * camera hole in a different place is not this developer's to guess at.
  */
 class MainActivity : ComponentActivity() {
 
@@ -74,15 +78,30 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun App() {
         var project by remember { mutableStateOf(load(DEFAULT_PROJECT)) }
-        var mode by remember { mutableStateOf(Mode.STOPPED) }
+
+        // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
+        //
+        // In v1 the mode was implied by whether the Play button had been pressed, which meant the
+        // difference between a press that seeks and a press that RECORDS OVER A TAKE was a state
+        // nothing on screen named. With thirty small tiles that is worse, not better: the target
+        // is smaller and the consequence is the same. So there is one toggle, it says REC or PLAY,
+        // and it is solid in the colour of what it will do.
+        var armed by remember { mutableStateOf(Mode.STOPPED) }
         var recordingSlot by remember { mutableStateOf<Int?>(null) }
         var playing by remember { mutableStateOf<Int?>(null) }
         var fraction by remember { mutableStateOf(0f) }
         var message by remember { mutableStateOf("") }
-        val listState = rememberLazyListState()
+        val gridState = rememberLazyGridState()
 
         val level by Recorder.level.collectAsState()
+        val liveShape by Recorder.live.collectAsState()
         val advance by OverlayState.advanceRequested.collectAsState()
+
+        val mode = when {
+            recordingSlot != null -> Mode.RECORDING
+            armed == Mode.PLAYING -> Mode.PLAYING
+            else -> Mode.STOPPED
+        }
 
         // THE TRIANGLE. One press: stop this recording and start the next slot. It is not a
         // transport, and at slot 30 it stops rather than wrapping.
@@ -92,28 +111,25 @@ class MainActivity : ComponentActivity() {
             Recorder.stop()
             val next = Advance.next(from)
             if (next == null) {
-                mode = Mode.STOPPED
                 recordingSlot = null
                 message = "slot $SLOTS is the last one"
             } else {
                 delay(150)
-                beginRecording(next) { p -> project = p }
+                beginRecording(next) { project = it }
                 recordingSlot = next
             }
         }
 
-        // The overlay only ever reflects what the recorder is doing. It is not a second source of
-        // truth about whether anything is recording.
         LaunchedEffect(recordingSlot, level) {
             OverlayService.instance?.showRecording(recordingSlot, level)
         }
 
-        // THE PLAYHEAD. A poll rather than a callback because MediaPlayer's position is the only
-        // honest source, and 60ms is fast enough that the mark moves smoothly across a line while
-        // being slow enough that it costs nothing.
+        // THE PLAYHEAD. Polled rather than driven by a callback, because MediaPlayer's position is
+        // the only honest source. Sixty milliseconds is fast enough that the mark moves smoothly
+        // across a tile and slow enough that it costs nothing.
         LaunchedEffect(playing) {
-            val p = player
-            while (playing != null && p != null) {
+            while (playing != null) {
+                val p = player ?: break
                 val dur = p.duration.coerceAtLeast(1)
                 fraction = (p.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
                 delay(60)
@@ -121,25 +137,38 @@ class MainActivity : ComponentActivity() {
         }
 
         Column(
-            Modifier.fillMaxSize().background(Color.Black).padding(horizontal = 10.dp),
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .safeDrawingPadding()
+                .padding(horizontal = 6.dp),
         ) {
-            Spacer(Modifier.height(12.dp))
             Text(
                 "${project.name}   ${project.filled.size} / $SLOTS" +
                     if (message.isEmpty()) "" else "   ·   $message",
                 color = Color(0xFF94A3B8),
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(vertical = 6.dp),
             )
-            Spacer(Modifier.height(8.dp))
 
-            LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(COLUMNS),
+                state = gridState,
+                modifier = Modifier.weight(1f),
+            ) {
                 items(project.slots, key = { it.index }) { slot ->
-                    Line(
+                    Tile(
                         slot = slot,
                         playhead = if (playing == slot.index) fraction else null,
                         recording = recordingSlot == slot.index,
-                        waveform = waveformOf(project.id, slot.index),
+                        // While this tile is recording it draws the shape arriving, not the file
+                        // on disk, which does not exist yet.
+                        waveform = if (recordingSlot == slot.index) {
+                            liveShape
+                        } else {
+                            waveformOf(project.id, slot.index)
+                        },
                         onPress = {
                             when (val p = Gesture.press(mode, project, slot.index, recordingSlot)) {
                                 is Press.StartRecording -> {
@@ -148,19 +177,15 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         beginRecording(p.slot) { project = it }
                                         recordingSlot = p.slot
-                                        mode = Mode.RECORDING
                                         message = ""
                                     }
                                 }
                                 is Press.StopRecording -> {
                                     Recorder.stop()
                                     recordingSlot = null
-                                    mode = Mode.STOPPED
                                     project = load(project.id)
                                 }
-                                is Press.SeekTo -> {
-                                    startPlaying(p.slot, project) { playing = it }
-                                }
+                                is Press.SeekTo -> startPlaying(p.slot, project) { playing = it }
                                 is Press.Clear -> Unit
                                 is Press.Refused -> message = p.why
                             }
@@ -181,34 +206,37 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            Spacer(Modifier.height(4.dp))
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Button("Seq", Modifier.width(74.dp)) { message = "Seq arrives with v2" }
-                Button("Voice", Modifier.width(74.dp)) { message = "Voice arrives with v2" }
-                Button(if (mode == Mode.PLAYING) "Stop" else "Play", Modifier.weight(1f)) {
-                    if (mode == Mode.PLAYING) {
-                        player?.stop()
-                        player?.release()
-                        player = null
-                        playing = null
-                        mode = Mode.STOPPED
-                    } else {
-                        val first = project.sequence().firstOrNull()
-                        if (first == null) {
-                            message = "nothing recorded yet"
-                        } else {
-                            mode = Mode.PLAYING
-                            startPlaying(first, project) { playing = it }
-                        }
+                Button("Seq", Modifier.width(64.dp)) { message = "Seq arrives with v3" }
+                Button("Voice", Modifier.width(72.dp)) { message = "Voice arrives with v3" }
+                Button(
+                    label = if (armed == Mode.PLAYING) "PLAY" else "REC",
+                    modifier = Modifier.weight(1f),
+                    solid = true,
+                    accent = if (armed == Mode.PLAYING) PLAY_AMBER else RECORDING_RED,
+                ) {
+                    // Flipping the toggle stops whatever the old mode was doing. Leaving a
+                    // recording running while the app claims to be a player is how a press lands
+                    // in the wrong branch.
+                    if (recordingSlot != null) {
+                        Recorder.stop()
+                        recordingSlot = null
+                        project = load(project.id)
                     }
+                    player?.let { runCatching { it.stop() }; it.release() }
+                    player = null
+                    playing = null
+                    armed = if (armed == Mode.PLAYING) Mode.STOPPED else Mode.PLAYING
+                    message = ""
                 }
             }
         }
     }
 
-    /** Where the list jumps to. It jumps; it never smooth scrolls. */
     private fun startPlaying(slot: Int, project: Project, onSlot: (Int?) -> Unit) {
         player?.release()
         val f = Paths.playing(filesDir, project.id, slot, project.engine)
@@ -242,11 +270,7 @@ class MainActivity : ComponentActivity() {
     private fun load(id: String): Project {
         val slots = (0 until SLOTS).map { i ->
             val f = Paths.original(filesDir, id, i)
-            Slot(
-                index = i,
-                hasOriginal = f.isFile,
-                lengthMs = Recorder.lengthMs(f),
-            )
+            Slot(index = i, hasOriginal = f.isFile, lengthMs = Recorder.lengthMs(f))
         }
         return Project(id = id, name = id, slots = slots)
     }
@@ -260,7 +284,10 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val DEFAULT_PROJECT = "project-01"
 
-        /** Ninety-six, which is what a full-width line allows and a three-across tile does not. */
-        const val WAVEFORM_BUCKETS = 96
+        /** Three across, ten down, which puts the whole set on one screen. */
+        const val COLUMNS = 3
+
+        /** Thirty-two, which is what a third of a screen width can show honestly. */
+        const val WAVEFORM_BUCKETS = 32
     }
 }
