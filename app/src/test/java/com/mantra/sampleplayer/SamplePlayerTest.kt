@@ -547,10 +547,20 @@ class SamplePlayerTest {
         assertEquals(1, Grid.pageCount(0, 1))
     }
 
-    @Test fun `a set larger than one screen is more pages`() {
-        assertEquals(2, Grid.pageCount(60, 1))
-        assertEquals(4, Grid.pageCount(120, 1))
-        assertEquals(2, Grid.pageCount(31, 1))
+    @Test fun `the number of pages is the number asked for`() {
+        // THIS TEST USED TO SAY SOMETHING ELSE, and the regex that renamed the function underneath
+        // it kept the old numbers. It asserted that sixty cells is two pages, which was true while
+        // a page was a fixed thirty. A page is now whatever a spread makes it: sixty cells over
+        // one page is one page of sixty, and asking for two gives two.
+        assertEquals(1, Grid.pageCount(60, 1))
+        assertEquals(2, Grid.pageCount(60, 2))
+        assertEquals(4, Grid.pageCount(120, 4))
+        assertEquals(3, Grid.pageCount(31, 3))
+    }
+
+    @Test fun `asking for more pages than cells gives one cell per page`() {
+        assertEquals(5, Grid.pageCount(5, 20))
+        assertEquals(1, Grid.perPage(5, 20))
     }
 
     @Test fun `the last page is short rather than padded`() {
