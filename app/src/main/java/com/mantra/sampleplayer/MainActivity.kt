@@ -21,10 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -66,7 +67,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         vault = Vault(filesDir)
         prefs = Prefs(this)
-        vault.ensure(DEFAULT_PROJECT)
+        vault.ensure(DEFAULT_PROJECT, prefs.slotCount)
         setContent { App() }
     }
 
@@ -76,12 +77,15 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private fun slotCountNow(): Int = prefs.slotCount
+
     private fun hasMic(): Boolean =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
     @Composable
     private fun App() {
-        var project by remember { mutableStateOf(load(DEFAULT_PROJECT)) }
+        var slotCount by remember { mutableStateOf(prefs.slotCount) }
+        var project by remember { mutableStateOf(load(DEFAULT_PROJECT, slotCount)) }
 
         // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
         //
@@ -97,7 +101,7 @@ class MainActivity : ComponentActivity() {
         var message by remember { mutableStateOf("") }
         var showSettings by remember { mutableStateOf(false) }
         var playMode by remember { mutableStateOf(prefs.playMode) }
-        val gridState = rememberLazyGridState()
+        val pagerState = rememberPagerState(pageCount = { project.pages })
 
         val level by Recorder.level.collectAsState()
         val liveShape by Recorder.live.collectAsState()
@@ -115,10 +119,10 @@ class MainActivity : ComponentActivity() {
             if (advance == 0L || recordingSlot == null) return@LaunchedEffect
             val from = recordingSlot ?: return@LaunchedEffect
             Recorder.stop()
-            val next = Advance.next(from)
+            val next = Advance.next(from, project.size)
             if (next == null) {
                 recordingSlot = null
-                message = "slot $SLOTS is the last one"
+                message = "slot ${project.size} is the last one"
             } else {
                 delay(150)
                 beginRecording(next) { loaded, _ -> project = loaded }
@@ -148,10 +152,21 @@ class MainActivity : ComponentActivity() {
             // shipped exactly that and had no way back out of it in landscape.
             SettingsScreen(
                 playMode = playMode,
+                slotCount = slotCount,
                 usage = vault.usageOf(project.id),
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
+                },
+                onSlotCount = {
+                    // RAISING THE COUNT REVEALS CELLS; LOWERING IT HIDES THEM. Nothing is deleted
+                    // either way. A setting that silently destroys recordings because a number
+                    // went down would be the worst control in the app, and the storage figures
+                    // above keep counting the hidden ones so the space is never a mystery.
+                    slotCount = it
+                    prefs.slotCount = it
+                    vault.ensure(project.id, it)
+                    project = load(project.id, it)
                 },
                 onClearGenerated = {
                     val n = vault.clearGenerated(project.id)
@@ -172,20 +187,38 @@ class MainActivity : ComponentActivity() {
                 .padding(horizontal = 6.dp),
         ) {
             Text(
-                "${project.name}   ${project.filled.size} / $SLOTS" +
-                    if (message.isEmpty()) "" else "   ·   $message",
+                buildString {
+                    append(project.name)
+                    append("   ")
+                    append(project.filled.size)
+                    append(" / ")
+                    append(project.size)
+                    // THE PAGE COUNT GOES HERE AND THERE IS NO NEXT BUTTON. Baba's own answer,
+                    // after considering splitting a cell into forward and back and rejecting it in
+                    // the same breath: put the number somewhere and flip the screen.
+                    val pageLabel = Paging.label(pagerState.currentPage, project.size)
+                    if (pageLabel.isNotEmpty()) {
+                        append("   ·   ")
+                        append(pageLabel)
+                    }
+                    if (message.isNotEmpty()) {
+                        append("   ·   ")
+                        append(message)
+                    }
+                },
                 color = Color(0xFF94A3B8),
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(vertical = 6.dp),
             )
 
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(COLUMNS),
-                state = gridState,
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier.weight(1f),
-            ) {
-                items(project.slots, key = { it.index }) { slot ->
+            ) { page ->
+              val onThisPage = Paging.slotsOn(page, project.size).map { project.slot(it) }
+              LazyVerticalGrid(columns = GridCells.Fixed(COLUMNS)) {
+                items(onThisPage, key = { it.index }) { slot ->
                     Tile(
                         slot = slot,
                         playhead = if (playing == slot.index) fraction else null,
@@ -215,7 +248,7 @@ class MainActivity : ComponentActivity() {
                                 is Press.StopRecording -> {
                                     Recorder.stop()
                                     recordingSlot = null
-                                    project = load(project.id)
+                                    project = load(project.id, slotCountNow())
                                 }
                                 is Press.SeekTo -> startPlaying(p.slot, project, playMode) { playing = it }
                                 is Press.Clear -> Unit
@@ -227,7 +260,7 @@ class MainActivity : ComponentActivity() {
                                 is Press.Clear -> {
                                     Paths.slotDir(filesDir, project.id, p.slot)
                                         .walkTopDown().filter { it.isFile }.forEach { it.delete() }
-                                    project = load(project.id)
+                                    project = load(project.id, slotCountNow())
                                     message = "slot ${p.slot + 1} cleared"
                                 }
                                 is Press.Refused -> message = p.why
@@ -236,6 +269,7 @@ class MainActivity : ComponentActivity() {
                         },
                     )
                 }
+              }
             }
 
             Spacer(Modifier.height(4.dp))
@@ -257,7 +291,7 @@ class MainActivity : ComponentActivity() {
                     if (recordingSlot != null) {
                         Recorder.stop()
                         recordingSlot = null
-                        project = load(project.id)
+                        project = load(project.id, slotCountNow())
                     }
                     player?.let { runCatching { it.stop() }; it.release() }
                     player = null
@@ -306,7 +340,7 @@ class MainActivity : ComponentActivity() {
                 File(Paths.slotDir(filesDir, DEFAULT_PROJECT, slot), "gen")
                     .listFiles()?.forEach { it.delete() }
             }
-            onDone(load(DEFAULT_PROJECT), SampleCheck.describe(quality))
+            onDone(load(DEFAULT_PROJECT, slotCountNow()), SampleCheck.describe(quality))
         }
     }
 
@@ -316,8 +350,8 @@ class MainActivity : ComponentActivity() {
         return waveform(Recorder.read(f), WAVEFORM_BUCKETS)
     }
 
-    private fun load(id: String): Project {
-        val slots = (0 until SLOTS).map { i ->
+    private fun load(id: String, count: Int): Project {
+        val slots = (0 until count).map { i ->
             val f = Paths.original(filesDir, id, i)
             Slot(index = i, hasOriginal = f.isFile, lengthMs = Recorder.lengthMs(f))
         }

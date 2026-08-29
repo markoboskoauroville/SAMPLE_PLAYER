@@ -35,8 +35,22 @@ class Prefs(context: Context) {
             .getOrDefault(PlayMode.CONTINUOUS)
         set(value) = sp.edit().putString(KEY_PLAY_MODE, value.name).apply()
 
+    /**
+     * How many cells the set has. Sanitised against the offered list rather than trusted, so a
+     * corrupt or hand-edited preference cannot produce a project of minus four slots.
+     */
+    var slotCount: Int
+        get() {
+            val stored = sp.getInt(KEY_SLOT_COUNT, DEFAULT_SLOTS)
+            return if (stored in SLOT_CHOICES) stored else DEFAULT_SLOTS
+        }
+        set(value) {
+            if (value in SLOT_CHOICES) sp.edit().putInt(KEY_SLOT_COUNT, value).apply()
+        }
+
     private companion object {
         const val KEY_PLAY_MODE = "play_mode"
+        const val KEY_SLOT_COUNT = "slot_count"
     }
 }
 
@@ -74,8 +88,10 @@ private fun Note(text: String) {
 @Composable
 fun SettingsScreen(
     playMode: PlayMode,
+    slotCount: Int,
     usage: Usage,
     onPlayMode: (PlayMode) -> Unit,
+    onSlotCount: (Int) -> Unit,
     onClearGenerated: () -> Unit,
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
@@ -95,6 +111,35 @@ fun SettingsScreen(
             fontSize = 14.sp,
             fontFamily = FontFamily.Monospace,
             modifier = Modifier.padding(vertical = 10.dp),
+        )
+
+        // ── HOW MANY CELLS ───────────────────────────────────────────────────────────────────
+        //
+        // Buttons rather than a number field. A text field is a keyboard, and this app is dictated
+        // by somebody who does not type.
+        Heading("CELLS")
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            for (n in SLOT_CHOICES) {
+                Button(
+                    label = n.toString(),
+                    modifier = Modifier.weight(1f),
+                    solid = slotCount == n,
+                    accent = PLAY_AMBER,
+                ) { onSlotCount(n) }
+            }
+        }
+        Note(
+            if (slotCount <= PAGE_SIZE) {
+                "One screen. Nothing to flip."
+            } else {
+                "${Paging.pageCount(slotCount)} screens. Flip sideways to reach them; the page " +
+                    "number is in the line at the top."
+            },
+        )
+        Note(
+            "Lowering this hides cells, it does not delete them. Raise it again and the " +
+                "recordings are still there. The storage figures below count everything on the " +
+                "phone, hidden or not.",
         )
 
         // ── WHAT HAPPENS WHEN A SAMPLE ENDS ──────────────────────────────────────────────────
@@ -124,7 +169,7 @@ fun SettingsScreen(
         // ── STORAGE ──────────────────────────────────────────────────────────────────────────
         Heading("STORAGE")
         Text(
-            "${usage.filledSlots} of $SLOTS slots recorded\n" +
+            "${usage.filledSlots} slots recorded\n" +
                 "${usage.files} files, ${usage.megabytes()}",
             color = Color.White,
             fontSize = 12.sp,

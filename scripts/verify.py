@@ -63,6 +63,10 @@ vault_code = code_only(src["Vault.kt"])
 ui_code = code_only(src["MainActivity.kt"])
 overlay_code = code_only(src["Overlay.kt"])
 ring_code = code_only(src["KeyRing.kt"])
+settings_code = code_only(src["Settings.kt"])
+recorder_code = code_only(src["Recorder.kt"])
+tile_code = code_only(src["Ui.kt"])
+dsp_code = code_only(src["Dsp.kt"])
 
 # ── THE ORIGINAL RECORDING ────────────────────────────────────────────────────────────────────
 #
@@ -109,16 +113,67 @@ check(
 # ── THE TRIANGLE ──────────────────────────────────────────────────────────────────────────────
 check(
     "the triangle stops at the last slot rather than wrapping",
-    "if (from >= SLOTS - 1) null" in model_code,
-    "Advance.next returns null at slot 30, never 0",
+    "if (from >= total - 1) null" in model_code,
+    "Advance.next returns null at the end of THIS set, never 0",
 )
 
 # ── THIRTY IS WRITTEN ONCE ────────────────────────────────────────────────────────────────────
 bare_30 = sum(len(re.findall(r"(?<![\w.])30(?![\w.])", code_only(t))) for t in src.values())
 check(
-    "the count of slots is a constant rather than a literal",
-    "const val SLOTS = 30" in model_code and bare_30 <= 2,
-    f"SLOTS declared once; bare 30s in code: {bare_30}",
+    "the default count is declared once and nowhere hard-coded",
+    "const val DEFAULT_SLOTS = 30" in model_code and bare_30 <= 2,
+    f"DEFAULT_SLOTS declared once; bare 30s in code: {bare_30}",
+)
+
+# ── THE SET IS NOT ALWAYS THIRTY ──────────────────────────────────────────────────────────────
+#
+# Thirty stopped being a law and became a default. Anything still counting to a constant would be
+# right for a thirty-cell project and quietly wrong for every other size.
+check(
+    "nothing counts to a fixed slot total any more",
+    "0 until SLOTS" not in "".join(code_only(t) for t in src.values()),
+    "bounds come from the project or from what is on disk",
+)
+check(
+    "the triangle asks the project where the end is",
+    "Advance.next(from, project.size)" in ui_code,
+    "a fifteen-cell set ends at fifteen, not at thirty",
+)
+check(
+    "a chosen cell count is sanitised against the offered list",
+    "in SLOT_CHOICES" in settings_code,
+    "a hand-edited preference must not produce a project of minus four slots",
+)
+
+# ── PAGING, AND NO CELL SPENT ON IT ───────────────────────────────────────────────────────────
+#
+# Splitting the last cell into forward and back was considered and rejected in the same breath: a
+# set of thirty that spends one on navigation is a set of twenty-nine, and the arrow would sit
+# somewhere different on every page. The count goes in the header and the screen is flipped.
+check(
+    "the page arithmetic is one pure object",
+    "object Paging" in model_code,
+    "pageCount, slotsOn, pageOf and label, all testable without a screen",
+)
+check(
+    "the pages are flipped rather than navigated by a control",
+    "HorizontalPager" in ui_code,
+    "no next-page button anywhere",
+)
+check(
+    "the page count is shown in the header",
+    "Paging.label(pagerState.currentPage" in ui_code,
+    "the number is where the project name and the slot count already are",
+)
+check(
+    "the label is silent when there is only one page",
+    "if (pages <= 1)" in model_code,
+    "an app that says page 1 of 1 is an app telling you about itself",
+)
+check(
+    "lowering the cell count does not delete anything",
+    "deleteRecursively" not in ui_code and "onSlotCount" in ui_code,
+    "raising it again brings the recordings back; storage keeps counting the hidden ones",
 )
 
 # ── SPEECHRECOGNIZER ──────────────────────────────────────────────────────────────────────────
@@ -245,8 +300,6 @@ check(
 # quiet-but-usable phrase and a recording of an empty room look identical once both have been
 # pulled up to the same peak. And the file must be rewritten before anybody plays it, or thirty
 # phrases recorded across a week play back as thirty different volumes.
-recorder_code = code_only(src["Recorder.kt"])
-dsp_code = code_only(src["Dsp.kt"])
 check(
     "the recorder normalises the finished take",
     "normalise(raw)" in recorder_code and "writeWav(" in recorder_code,
@@ -295,7 +348,6 @@ check(
 )
 
 # ── SETTINGS ────────────────────────────────────────────────────────
-settings_code = code_only(src["Settings.kt"])
 check(
     "settings is a screen and takes the insets too",
     "safeDrawingPadding()" in settings_code,
@@ -317,7 +369,6 @@ check(
 # ever — the one that captured mode = STOPPED. Tapping a recording tile asked to START a
 # recording, the recorder ignored it because one was running, and nothing happened at all. The
 # state was right the whole time; the gesture was reading a photograph of it.
-tile_code = code_only(src["Ui.kt"])
 check(
     "the tile's gesture calls the current callback",
     "rememberUpdatedState(onPress)" in tile_code,
@@ -369,7 +420,6 @@ check(
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
 # it worked. A test of unreachable code is worse than no test: it reports confidence about a
 # path the app never takes. Every class Test 1 exercises must be reached from the app itself.
-recorder_code = code_only(src["Recorder.kt"])
 check(
     "the silence ceiling the tests exercise is the one the recorder uses",
     "Ceiling()" in recorder_code,
@@ -385,7 +435,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 76, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 88, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -397,7 +447,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 46:
+if len(checks_run) < 55:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

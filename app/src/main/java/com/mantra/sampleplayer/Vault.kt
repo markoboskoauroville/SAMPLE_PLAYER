@@ -87,12 +87,16 @@ data class Usage(val projects: Int, val filledSlots: Int, val files: Int, val by
         fun ofProject(root: File, id: String): Usage {
             val dir = Paths.projectDir(root, id)
             if (!dir.isDirectory) return Usage(1, 0, 0, 0L)
+            // WALK WHAT IS ON DISK, not zero until a constant. The slot count is chosen in
+            // settings, and reducing it must not make megabytes disappear from a screen whose
+            // whole job is telling you where the space went. Recordings past the current count are
+            // hidden from the grid; they are still files and they still occupy the phone.
             var files = 0
             var bytes = 0L
             var filled = 0
-            for (slot in 0 until SLOTS) {
-                if (Paths.original(root, id, slot).isFile) filled++
-                val sd = Paths.slotDir(root, id, slot)
+            val samples = File(dir, "samples")
+            samples.listFiles()?.filter { it.isDirectory }?.forEach { sd ->
+                if (File(sd, Paths.ORIGINAL).isFile) filled++
                 sd.walkTopDown().filter { it.isFile }.forEach { files++; bytes += it.length() }
             }
             return Usage(1, filled, files, bytes)
@@ -110,8 +114,9 @@ class Vault(private val root: File) {
         File(root, "projects").listFiles()?.filter { it.isDirectory }?.map { it.name }?.sorted()
             ?: emptyList()
 
-    fun ensure(id: String) {
-        for (slot in 0 until SLOTS) Paths.slotDir(root, id, slot).mkdirs()
+    /** Directories for [count] slots. Called again when the count is raised in settings. */
+    fun ensure(id: String, count: Int = DEFAULT_SLOTS) {
+        for (slot in 0 until count) Paths.slotDir(root, id, slot).mkdirs()
     }
 
     fun usage(): Usage = projectIds().fold(Usage.NONE) { acc, id -> acc + Usage.ofProject(root, id) }
@@ -129,10 +134,11 @@ class Vault(private val root: File) {
     /** Clear the generated audio for a whole project, leaving every original untouched. */
     fun clearGenerated(id: String): Int {
         var removed = 0
-        for (slot in 0 until SLOTS) {
-            val gen = File(Paths.slotDir(root, id, slot), "gen")
-            gen.listFiles()?.forEach { if (it.delete()) removed++ }
-        }
+        File(Paths.projectDir(root, id), "samples").listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { sd ->
+                File(sd, "gen").listFiles()?.forEach { if (it.delete()) removed++ }
+            }
         return removed
     }
 }

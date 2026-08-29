@@ -8,8 +8,33 @@ package com.mantra.sampleplayer
  * did, because the thing a bug destroys here is a recording that cannot be made again.
  */
 
-/** Thirty, and it is thirty everywhere. */
-const val SLOTS = 30
+/**
+ * Thirty, and it is now a DEFAULT rather than a law.
+ *
+ * Thirty was the brief and it is still what a new project gets. It stopped being a constant when
+ * it turned out that a set is sometimes fifteen lines and sometimes a hundred, and an app that
+ * makes you record into thirty boxes when you have twelve things to say is an app that counts for
+ * you.
+ */
+const val DEFAULT_SLOTS = 30
+
+/** What may be chosen. Not a free number: a text field is a keyboard, and this app is dictated. */
+val SLOT_CHOICES = listOf(15, 30, 60, 120)
+
+/**
+ * ONE SCREENFUL, AND IT IS THE UNIT OF PAGING.
+ *
+ * Three across and ten down is what fits on this phone without scrolling, which is why thirty
+ * looked right in the first place. A page is that, and a set larger than one page is flipped
+ * sideways rather than scrolled.
+ *
+ * If a page does not fit some other screen it scrolls, which is a worse day than flipping but not
+ * a broken one. Measuring the available height and choosing the row count from it would be more
+ * correct and is not built, because it has not been needed on the only phone this runs on.
+ */
+const val PAGE_ROWS = 10
+const val COLUMNS = 3
+const val PAGE_SIZE = PAGE_ROWS * COLUMNS
 
 /**
  * WHICH PRESS MEANS WHAT.
@@ -87,13 +112,25 @@ data class Slot(
 data class Project(
     val id: String,
     val name: String,
-    val slots: List<Slot> = (0 until SLOTS).map { Slot(it) },
+    val slots: List<Slot> = (0 until DEFAULT_SLOTS).map { Slot(it) },
     /** The custom running order from the Seq view. Empty means natural order. */
     val order: List<Int> = emptyList(),
     /** Which engine's audio the lines play, or null for Baba's own recordings. */
     val engine: String? = null,
 ) {
     val filled: List<Int> get() = slots.filter { it.hasOriginal }.map { it.index }
+
+    /** How many cells this project has. Not a constant: it is chosen in settings. */
+    val size: Int get() = slots.size
+
+    /**
+     * How many screenfuls this project is.
+     *
+     * There is no next-page button and there is not going to be one. Baba's own answer: put the
+     * count somewhere and flip the screen. A control that steals a cell to navigate between cells
+     * costs one of the thirty things the screen is for.
+     */
+    val pages: Int get() = Paging.pageCount(size)
 
     /**
      * The running order actually played.
@@ -127,7 +164,7 @@ data class Project(
 object Gesture {
 
     fun press(mode: Mode, project: Project, slot: Int, recordingSlot: Int? = null): Press {
-        if (slot !in 0 until SLOTS) return Press.Refused("no such slot")
+        if (slot !in project.slots.indices) return Press.Refused("no such slot")
         return when (mode) {
             Mode.STOPPED -> Press.StartRecording(slot)
 
@@ -158,7 +195,7 @@ object Gesture {
      * recording would delete the thing being written.
      */
     fun longPress(mode: Mode, project: Project, slot: Int): Press = when {
-        slot !in 0 until SLOTS -> Press.Refused("no such slot")
+        slot !in project.slots.indices -> Press.Refused("no such slot")
         mode != Mode.STOPPED -> Press.Refused("stop first")
         project.slot(slot).isEmpty -> Press.Refused("already empty")
         else -> Press.Clear(slot)
@@ -183,12 +220,14 @@ object Advance {
      * would notice. The triangle carries the number 30 at the last slot instead, so the end is
      * visible without counting.
      */
-    fun next(from: Int): Int? = if (from >= SLOTS - 1) null else from + 1
+    fun next(from: Int, total: Int = DEFAULT_SLOTS): Int? =
+        if (from >= total - 1) null else from + 1
 
-    fun atEnd(slot: Int): Boolean = slot >= SLOTS - 1
+    fun atEnd(slot: Int, total: Int = DEFAULT_SLOTS): Boolean = slot >= total - 1
 
     /** What the triangle draws inside itself: nothing, or the number of the last slot. */
-    fun glyph(slot: Int): String = if (atEnd(slot)) SLOTS.toString() else ""
+    fun glyph(slot: Int, total: Int = DEFAULT_SLOTS): String =
+        if (atEnd(slot, total)) total.toString() else ""
 }
 
 /**
@@ -269,7 +308,7 @@ object Follow {
         if (playing in firstVisible..last) return null
         // Put the playing line one row down from the top, so the next few are visible too and the
         // person can see what is coming rather than only what is sounding.
-        return (playing - 1).coerceIn(0, (SLOTS - visibleCount).coerceAtLeast(0))
+        return (playing - 1).coerceIn(0, (PAGE_SIZE - visibleCount).coerceAtLeast(0))
     }
 }
 
@@ -320,5 +359,40 @@ data class GeneratePlan(val ready: List<Int>, val skipped: List<Int>) {
                 skipped = filled.filter { it.words.isBlank() }.map { it.index },
             )
         }
+    }
+}
+
+/**
+ * HOW MANY SCREENFULS, AND WHICH CELLS ARE ON EACH.
+ *
+ * There is no next-page control. Baba considered splitting the last cell into a forward and a back
+ * button and rejected it in the same breath, correctly: a set of thirty that spends one of them on
+ * navigation is a set of twenty-nine, and the arrow would sit in a different place on every page.
+ * The page count goes in the header and the screen is flipped sideways.
+ */
+object Paging {
+
+    /** Never fewer than one page, so an empty project still has a screen to look at. */
+    fun pageCount(total: Int, perPage: Int = PAGE_SIZE): Int {
+        if (perPage <= 0) return 1
+        return ((total + perPage - 1) / perPage).coerceAtLeast(1)
+    }
+
+    /** The slot indices on [page], zero-based. The last page is short rather than padded. */
+    fun slotsOn(page: Int, total: Int, perPage: Int = PAGE_SIZE): IntRange {
+        if (perPage <= 0 || total <= 0) return IntRange.EMPTY
+        val from = page * perPage
+        if (from >= total) return IntRange.EMPTY
+        return from until minOf(from + perPage, total)
+    }
+
+    /** Which page a slot is on, so the playhead and the triangle can bring it into view. */
+    fun pageOf(slot: Int, perPage: Int = PAGE_SIZE): Int =
+        if (perPage <= 0) 0 else slot / perPage
+
+    /** "2 / 4", or empty when the whole set is one screen and there is nothing to flip. */
+    fun label(page: Int, total: Int, perPage: Int = PAGE_SIZE): String {
+        val pages = pageCount(total, perPage)
+        return if (pages <= 1) "" else "page ${page + 1} / $pages"
     }
 }

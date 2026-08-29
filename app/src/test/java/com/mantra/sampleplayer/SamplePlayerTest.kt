@@ -21,8 +21,10 @@ import java.nio.file.Files
  */
 class SamplePlayerTest {
 
-    private fun filled(vararg idx: Int): Project {
-        val slots = (0 until SLOTS).map { Slot(it, hasOriginal = it in idx.toSet()) }
+    private fun filled(vararg idx: Int): Project = sized(DEFAULT_SLOTS, *idx)
+
+    private fun sized(count: Int, vararg idx: Int): Project {
+        val slots = (0 until count).map { Slot(it, hasOriginal = it in idx.toSet()) }
         return Project("p", "p", slots)
     }
 
@@ -53,7 +55,7 @@ class SamplePlayerTest {
 
     @Test fun `every slot in playing mode is a seek or a refusal, never a recording`() {
         val project = filled(0, 5, 29)
-        for (i in 0 until SLOTS) {
+        for (i in 0 until DEFAULT_SLOTS) {
             val p = Gesture.press(Mode.PLAYING, project, i)
             assertFalse("slot $i recorded during playback", p is Press.StartRecording)
         }
@@ -72,7 +74,7 @@ class SamplePlayerTest {
     @Test fun `a slot out of range is refused in every mode`() {
         for (m in Mode.entries) {
             assertTrue(Gesture.press(m, filled(), -1) is Press.Refused)
-            assertTrue(Gesture.press(m, filled(), SLOTS) is Press.Refused)
+            assertTrue(Gesture.press(m, filled(), DEFAULT_SLOTS) is Press.Refused)
         }
     }
 
@@ -91,8 +93,8 @@ class SamplePlayerTest {
     }
 
     @Test fun `the triangle does not wrap at the last slot`() {
-        assertNull(Advance.next(SLOTS - 1))
-        assertNotEquals(0, Advance.next(SLOTS - 1))
+        assertNull(Advance.next(DEFAULT_SLOTS - 1))
+        assertNotEquals(0, Advance.next(DEFAULT_SLOTS - 1))
     }
 
     @Test fun `the triangle carries the number only at the last slot`() {
@@ -229,6 +231,89 @@ class SamplePlayerTest {
         assertEquals(emptyList<Int>(), filled().sequence())
     }
 
+
+    // ── PAGING ────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a set that fits one screen is one page`() {
+        assertEquals(1, Paging.pageCount(30))
+        assertEquals(1, Paging.pageCount(1))
+    }
+
+    @Test fun `an empty set still has a screen to look at`() {
+        assertEquals(1, Paging.pageCount(0))
+    }
+
+    @Test fun `a set larger than one screen is more pages`() {
+        assertEquals(2, Paging.pageCount(60))
+        assertEquals(4, Paging.pageCount(120))
+        assertEquals(2, Paging.pageCount(31))
+    }
+
+    @Test fun `the last page is short rather than padded`() {
+        assertEquals(30 until 31, Paging.slotsOn(1, 31))
+    }
+
+    @Test fun `every offered cell count divides into whole pages of thirty`() {
+        // Not required, but if one of these ever leaves a page holding a single cell it should be
+        // a decision rather than a surprise.
+        for (n in SLOT_CHOICES) {
+            val pages = Paging.pageCount(n)
+            assertTrue("$n cells gave $pages pages", pages >= 1)
+            assertEquals(n, (0 until pages).sumOf { Paging.slotsOn(it, n).count() })
+        }
+    }
+
+    @Test fun `a page past the end holds nothing rather than wrapping`() {
+        assertTrue(Paging.slotsOn(5, 30).isEmpty())
+    }
+
+    @Test fun `a slot knows which page it is on`() {
+        assertEquals(0, Paging.pageOf(0))
+        assertEquals(0, Paging.pageOf(29))
+        assertEquals(1, Paging.pageOf(30))
+        assertEquals(3, Paging.pageOf(119))
+    }
+
+    @Test fun `the page label is silent when there is nothing to flip`() {
+        assertEquals("", Paging.label(0, 30))
+        assertEquals("page 1 / 2", Paging.label(0, 60))
+        assertEquals("page 2 / 2", Paging.label(1, 60))
+    }
+
+    @Test fun `no cell is spent on navigation`() {
+        // Splitting the last cell into forward and back was considered and rejected: a set of
+        // thirty that spends one on navigation is a set of twenty-nine, and the arrow would sit
+        // somewhere different on every page.
+        for (n in SLOT_CHOICES) {
+            assertEquals(n, (0 until Paging.pageCount(n)).sumOf { Paging.slotsOn(it, n).count() })
+        }
+    }
+
+    // ── A SET IS NOT ALWAYS THIRTY ────────────────────────────────────────────────────────────
+
+    @Test fun `the triangle stops at the last slot of THIS set, not of thirty`() {
+        assertNull(Advance.next(14, total = 15))
+        assertEquals(15, Advance.next(14, total = 60))
+    }
+
+    @Test fun `the triangle carries the count of this set`() {
+        assertEquals("15", Advance.glyph(14, total = 15))
+        assertEquals("", Advance.glyph(14, total = 60))
+        assertEquals("120", Advance.glyph(119, total = 120))
+    }
+
+    @Test fun `a press past the end of a smaller set is refused`() {
+        val small = sized(15)
+        assertTrue(Gesture.press(Mode.STOPPED, small, 15) is Press.Refused)
+        assertTrue(Gesture.press(Mode.STOPPED, small, 14) is Press.StartRecording)
+    }
+
+    @Test fun `a project reports its own size and page count`() {
+        assertEquals(15, sized(15).size)
+        assertEquals(1, sized(15).pages)
+        assertEquals(4, sized(120).pages)
+    }
+
     // ── TITLES ────────────────────────────────────────────────────────────────────────────────
 
     @Test fun `an untranscribed slot is called by its number, one-based`() {
@@ -263,7 +348,7 @@ class SamplePlayerTest {
     // ── GENERATE ──────────────────────────────────────────────────────────────────────────────
 
     @Test fun `generate does the ready ones and counts the skipped`() {
-        val slots = (0 until SLOTS).map {
+        val slots = (0 until DEFAULT_SLOTS).map {
             when (it) {
                 0 -> Slot(0, hasOriginal = true, words = "one")
                 1 -> Slot(1, hasOriginal = true, words = "")
@@ -297,7 +382,7 @@ class SamplePlayerTest {
     @Test fun `a jump never asks for a negative row or past the end`() {
         assertEquals(0, Follow.jumpTo(playing = 0, firstVisible = 5, visibleCount = 8))
         val j = Follow.jumpTo(playing = 29, firstVisible = 0, visibleCount = 8)
-        assertTrue(j!! <= SLOTS - 8)
+        assertTrue(j!! <= DEFAULT_SLOTS - 8)
     }
 
     // ── THE SILENCE CEILING ─────────────────────────────────────────
