@@ -182,14 +182,7 @@ fun VoiceCard(
                 fontSize = 11.sp,
                 fontFamily = FontFamily.Monospace,
             )
-            Text(
-                "Tap one to hear it. The preview says the voice's own name, so eight emotions is " +
-                    "eight short calls rather than eight readings of your line.",
-                color = DIMMED,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(vertical = 4.dp),
-            )
+            Spacer(Modifier.height(4.dp))
 
             Row(Modifier.padding(vertical = 4.dp)) {
                 Box(
@@ -284,6 +277,39 @@ fun VoiceCard(
             }
         }
 
+        // ── THE HELP, DOWN HERE ──────────────────────────────────────────────────────────────
+        Spacer(Modifier.height(28.dp))
+        Text(
+            "WHAT THESE DO",
+            color = LABEL_C,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(6.dp))
+        Help(
+            "Hear it",
+            "The voice says its own name. Short on purpose: auditioning ten voices on a long line " +
+                "is ten long waits and ten times the billed characters.",
+        )
+        Help(
+            "Use this voice",
+            "Speaks this cell's transcript in this voice and stores it BESIDE your recording, in " +
+                "a different file. Your take is never replaced, and the cell menu can point back " +
+                "at it at any time.",
+        )
+        Help(
+            "How it says it",
+            "Hume reads the direction as prose rather than matching it against a list, so these " +
+                "are starting points and not presets. Tapping one previews it: the voice says its " +
+                "own name and what it is doing, because eight emotions is eight calls and Hume " +
+                "paces at about twelve seconds. Speechify has no such field, so this section only " +
+                "appears for Hume.",
+        )
+        Help(
+            "The star",
+            "Yours, not the provider's. Starred voices sort above everything in the chooser and " +
+                "can be filtered to on their own.",
+        )
         Spacer(Modifier.height(24.dp))
     }
 }

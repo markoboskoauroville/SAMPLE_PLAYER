@@ -757,6 +757,21 @@ class SamplePlayerTest {
         assertNull(Providers.byId("not-a-provider"))
     }
 
+    // ── THE THIRD WAY OUT OF THE CONFIRMATION ─────────────────────────────
+
+    @Test fun `the question is only asked when a take would be destroyed`() {
+        // It is the premise of offering Play at all: the app only asks here, and the most likely
+        // reason a full cell was pressed in record mode is that the mode was forgotten.
+        assertEquals(Press.ConfirmOverwrite(3), Gesture.press(Mode.STOPPED, filled(3), 3))
+        assertEquals(Press.StartRecording(3), Gesture.press(Mode.STOPPED, filled(), 3))
+    }
+
+    @Test fun `playing that cell is what the press would have meant in the other mode`() {
+        // What the Play button does is exactly what the same press does once the mode is flipped,
+        // which is why it can be offered without inventing a fourth behaviour.
+        assertEquals(Press.SeekTo(3), Gesture.press(Mode.PLAYING, filled(3), 3))
+    }
+
     // ── THE PENDING TAKE ────────────────────────────────────────────
 
     @Test fun `a take in progress is never written over the recording it may replace`() {

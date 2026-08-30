@@ -249,17 +249,31 @@ fun Button(
 }
 
 /**
- * OK OR CANCEL, IN A STRIP ABOVE THE CONTROLS.
+ * CANCEL, PLAY, OK — AND PLAY IS THE ONE THAT WAS MISSING.
  *
- * A bar rather than a dialog. A dialog dims the screen and takes the grid away, and the question
- * is about a cell you can see: which one, and whether it already has something in it. Covering the
- * answer to ask the question is the shape stopwatch v5 shipped and had to undo.
+ * The question only appears when a press would record over a take, and the honest reading of that
+ * moment is not "are you sure you want to destroy this". Most of the time the person meant to HEAR
+ * the cell and had forgotten which mode the app was in. Offering only Cancel and OK makes them
+ * cancel, find the toggle, flip it, and press the same cell again — four actions to correct a
+ * mistake the app already understood.
  *
- * It appears only when recording would destroy a take. An app that asks every time teaches you to
- * press OK without reading, and then it is not a confirmation, it is a second tap.
+ * So Play does what they meant: it plays that cell and leaves the app in play mode, so the next
+ * press does the same thing rather than asking again.
+ *
+ * ORDER AND COLOUR MATTER HERE. Cancel is first and plain. Play is amber, the colour of the play
+ * toggle, so the thing most likely to be wanted is the thing the eye lands on. OK is red and last,
+ * because it is the one that destroys a recording.
+ *
+ * A bar rather than a dialog. A dialog dims the screen and takes the grid away, and the question is
+ * about a cell you can see.
  */
 @Composable
-fun ConfirmBar(question: String, onCancel: () -> Unit, onOk: () -> Unit) {
+fun ConfirmBar(
+    question: String,
+    onCancel: () -> Unit,
+    onPlay: () -> Unit,
+    onOk: () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -275,6 +289,7 @@ fun ConfirmBar(question: String, onCancel: () -> Unit, onOk: () -> Unit) {
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button("Cancel", Modifier.weight(1f)) { onCancel() }
+            Button("Play", Modifier.weight(1f), solid = true, accent = PLAY_AMBER) { onPlay() }
             Button("OK", Modifier.weight(1f), solid = true, accent = RECORDING_RED) { onOk() }
         }
     }

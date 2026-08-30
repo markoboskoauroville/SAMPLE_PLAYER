@@ -75,14 +75,6 @@ fun KeysScreen(
         // is dictated by somebody who does not type. The picker opens the phone's own file
         // chooser, so the note can come from Drive, Downloads, or anywhere else it already lives.
         Button("Import keys from a text file", Modifier.fillMaxWidth()) { onImportFile() }
-        Text(
-            "The whole note. Account names on the line above each key are kept and shown here; " +
-                "the keys themselves are never displayed anywhere in this app.",
-            color = Color(0xFF71717A),
-            fontSize = 10.sp,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(top = 4.dp),
-        )
 
         if (busy.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
@@ -150,6 +142,36 @@ fun KeysScreen(
                 }
             }
         }
-        Spacer(Modifier.height(20.dp))
+        // ── THE HELP, ALL OF IT, DOWN HERE ───────────────────────────────────────────────────
+        Spacer(Modifier.height(28.dp))
+        Text(
+            "WHAT THESE DO",
+            color = Color(0xFF94A3B8),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(6.dp))
+        Help(
+            "Import keys from a text file",
+            "Paste the whole note into a text file and pick it here. It is read by the same " +
+                "parser as the rest of the account's apps, so prose, dates, account names, the " +
+                "word CANCELLED and pasted URLs are all fine. Importing APPENDS \u2014 a second " +
+                "note does not drop the first. Nothing in this app can display a key; the account " +
+                "name on the line above each one is shown instead.",
+        )
+        Help(
+            "Test / Test all",
+            "One real call per key. Green is working. Amber is throttled, which is a HEALTHY key " +
+                "having a busy minute and never a reason to delete it. Red is refused, out of " +
+                "credit, or the wrong provider for that key shape. Grey means the answer says " +
+                "nothing about the key \u2014 no network, or Cloudflare blocking the request.",
+        )
+        Help(
+            "Delete",
+            "Writes DELETED over the token and leaves the rest of the note intact, because the " +
+                "parser reads each key's account name from the line above it and cutting a line " +
+                "out would shift what the next key thinks it is called.",
+        )
+        Spacer(Modifier.height(24.dp))
     }
 }

@@ -101,25 +101,23 @@ private fun Heading(text: String) {
     )
 }
 
-@Composable
-private fun Note(text: String) {
-    Text(
-        text,
-        color = DIM,
-        fontSize = 10.sp,
-        fontFamily = FontFamily.Monospace,
-        modifier = Modifier.padding(top = 4.dp),
-    )
-}
 
 /**
  * THE SETTINGS SCREEN.
  *
- * Two switches and some arithmetic. It is not a preferences tree and it should not become one:
- * every option here is one that has already earned its place by being asked for.
+ * TITLES AND CONTROLS ONLY. THE HELP IS ONE BLOCK AT THE BOTTOM.
+ *
+ * Every control here used to carry a line or two of explanation directly underneath it. Read once
+ * that is useful; read the fiftieth time it is noise between you and the thing you came for, and it
+ * made this screen roughly three times taller than the controls need. Somebody who wants to know
+ * what "1x to 4x" costs can scroll to the end and find it with everything else.
+ *
+ * THE VERSION IS IN THE TITLE because this is the only screen that is always reachable, and the
+ * first question about any bug is which build it happened on.
  */
 @Composable
 fun SettingsScreen(
+    version: String,
     playMode: PlayMode,
     slotCount: Int,
     pageSpread: Int,
@@ -147,14 +145,9 @@ fun SettingsScreen(
             .padding(horizontal = 10.dp)
             .verticalScroll(rememberScrollState()),
     ) {
-        ScreenHeader("Settings", onBack)
+        ScreenHeader("Settings   v$version", onBack)
 
-        // ── HOW MANY CELLS, AND OVER HOW MANY PAGES ──────────────────────────────────────────
-        //
-        // PLUS AND MINUS, NOT A MENU OF FOUR SIZES. v5 offered 15, 30, 60 and 120 on the grounds
-        // that a text field is a keyboard. The objection is to typing, not to choosing a number,
-        // and a stepper is a number without a keyboard. Four fixed sizes meant a set of twelve
-        // lines had to be a set of fifteen.
+        // ── CELLS ────────────────────────────────────────────────────────────────────────────
         Heading("CELLS")
         Stepper(
             value = slotCount,
@@ -162,27 +155,19 @@ fun SettingsScreen(
             step = 1,
             bigStep = 10,
         )
-        Note("Raising this adds cells at the end. Nothing already recorded moves or is lost.")
 
-        Heading("PAGES")
+        // ── PAGES ────────────────────────────────────────────────────────────────────────────
+        val layout = Grid.of(slotCount, pageSpread)
+        Heading("PAGES   ${layout.perPage} per page, ${layout.columns} \u00d7 ${layout.rows}")
         Stepper(
             value = pageSpread,
             onChange = { onPageSpread(it.coerceIn(1, slotCount)) },
             step = 1,
             bigStep = 5,
         )
-        val layout = Grid.of(slotCount, pageSpread)
-        Note(
-            "${layout.perPage} per page, ${layout.columns} across and ${layout.rows} down. " +
-                "The cells fill the page: one on a page is the size of the page, two are halves.",
-        )
 
-        // ── WAVEFORM DETAIL ──────────────────────────────────────────────────────────────────
-        //
-        // A SETTING RATHER THAN A DECISION, because it is a real trade. Every bucket is a scan
-        // over its share of the samples and a rectangle to draw, on up to a hundred and twenty
-        // cells at once, so four times the detail is four times the work every time a page opens.
-        Heading("WAVEFORM DETAIL")
+        // ── WAVEFORM ─────────────────────────────────────────────────────────────────────────
+        Heading("WAVEFORM DETAIL   ${waveformBuckets(waveScale)} slices")
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (n in WAVEFORM_SCALES) {
                 Button(
@@ -193,7 +178,6 @@ fun SettingsScreen(
                 ) { onWaveScale(n) }
             }
         }
-        Note("${waveformBuckets(waveScale)} slices per cell. Higher is slower to open a page.")
 
         Heading("WAVEFORM COLOUR")
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -217,9 +201,8 @@ fun SettingsScreen(
                 }
             }
         }
-        Note("The transcript is written over the wave, so a pale wave makes it unreadable.")
 
-        // ── WHAT HAPPENS WHEN A SAMPLE ENDS ──────────────────────────────────────────────────
+        // ── PLAYBACK ─────────────────────────────────────────────────────────────────────────
         Heading("WHEN A SAMPLE ENDS")
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
@@ -235,110 +218,110 @@ fun SettingsScreen(
                 accent = PLAY_AMBER,
             ) { onPlayMode(PlayMode.SINGLE) }
         }
-        Note(
-            if (playMode == PlayMode.CONTINUOUS) {
-                "Plays on down the running order. The playhead travels through the set."
-            } else {
-                "Plays the tile you pressed and stops. For hearing one take four times."
-            },
-        )
 
         // ── STORAGE ──────────────────────────────────────────────────────────────────────────
-        Heading("STORAGE")
-        Text(
-            "${usage.filledSlots} slots recorded\n" +
-                "${usage.files} files, ${usage.megabytes()}",
-            color = Color.White,
-            fontSize = 12.sp,
-            fontFamily = FontFamily.Monospace,
+        Heading(
+            "STORAGE   ${usage.filledSlots} recorded, ${usage.files} files, ${usage.megabytes()}",
         )
-        Spacer(Modifier.height(8.dp))
         Button("Clear generated audio", Modifier.fillMaxWidth()) { onClearGenerated() }
-        Note(
-            "Removes engine voices only. Your own recordings are in a different file and are " +
-                "never touched by this. To delete one of your takes, long press its tile.",
-        )
 
         // ── KEYS ─────────────────────────────────────────────────────────────────────────────
-        //
-        // A DOOR, NOT A PANEL. Listing, testing and deleting keys is a screen's worth of work and
-        // it belongs on its own screen, the way `Key_Tester` has it. The paste box that used to be
-        // here is gone: a text field on a phone is a keyboard, and this app is dictated.
         Heading("KEYS")
-
-        // WHAT THE APP WANTS, BESIDE WHAT IT HAS. A list of whatever was imported says what you
-        // have and never what is missing, and then "why is Hume greyed out" is a question with no
-        // answer on the screen that caused it.
         Text(
             Needs.lines(keysHeld).joinToString("\n"),
-            color = Color(0xFF94A3B8),
+            color = LABEL,
             fontSize = 10.sp,
             fontFamily = FontFamily.Monospace,
         )
         val blocked = Needs.blocked(keysHeld)
         if (blocked.isNotEmpty()) {
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 blocked,
                 color = PLAY_AMBER,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
             )
         }
-        Note(
-            "Anything else in the note — GitHub, Gemini, Anthropic — is kept and can be tested, " +
-                "but this app never calls it.",
-        )
-        Spacer(Modifier.height(10.dp))
-
-        if (keySummary.isEmpty()) {
-            Note("Nothing imported yet.")
-        } else {
+        if (keySummary.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
             Text(
                 keySummary.joinToString("\n"),
                 color = Color.White,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,
             )
         }
-        Spacer(Modifier.height(8.dp))
-        Button("Keys — import, test, delete", Modifier.fillMaxWidth()) { onKeys() }
+        Spacer(Modifier.height(6.dp))
+        Button("Keys \u2014 import, test, delete", Modifier.fillMaxWidth()) { onKeys() }
 
         // ── PERMISSIONS ──────────────────────────────────────────────────────────────────────
-        //
-        // TWO BUTTONS, IN THE ORDER THE DOORS HAVE TO BE OPENED. An accessibility service
-        // installed from an APK is a restricted setting: the switch on the accessibility screen is
-        // greyed out until it has been unlocked from the app's own page, and nothing on the greyed
-        // switch says so. Sending somebody to the second door first is sending them to a locked
-        // one.
-        Heading("PERMISSIONS — IN THIS ORDER")
-        Note(
-            "The overlay is what lets you record without leaving the app you are reading from: " +
-                "the level line across the top of every screen, and the triangle under the " +
-                "camera that stops this sample and starts the next one. Android calls that an " +
-                "accessibility service, and it will not switch on until it is unlocked below. " +
-                "It does not read your screen.",
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "1.",
-            color = LABEL,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-        )
-        Button("Open app properties", Modifier.fillMaxWidth()) { onAppProperties() }
-        Note("Then the three dots at the top right, then Allow restricted settings.")
-        Spacer(Modifier.height(10.dp))
-        Text(
-            "2.",
-            color = LABEL,
-            fontSize = 11.sp,
-            fontFamily = FontFamily.Monospace,
-        )
-        Button("Open accessibility settings", Modifier.fillMaxWidth()) { onPermissions() }
-        Note("Find Sample Player in the list and turn it on. It stays on until you turn it off.")
+        Heading("PERMISSIONS \u2014 IN THIS ORDER")
+        Button("1. Open app properties", Modifier.fillMaxWidth()) { onAppProperties() }
+        Spacer(Modifier.height(6.dp))
+        Button("2. Open accessibility settings", Modifier.fillMaxWidth()) { onPermissions() }
 
-        Spacer(Modifier.height(20.dp))
+        // ── THE HELP, ALL OF IT, DOWN HERE ───────────────────────────────────────────────────
+        Spacer(Modifier.height(28.dp))
+        Text(
+            "WHAT THESE DO",
+            color = LABEL,
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(6.dp))
+        Help(
+            "Cells",
+            "How many cells the set has. Raising it adds cells at the end; nothing already " +
+                "recorded moves or is lost. Lowering it HIDES cells rather than deleting them, " +
+                "and raising it again brings the recordings back.",
+        )
+        Help(
+            "Pages",
+            "How many screens to spread the cells over. The cells fill the page: one on a page " +
+                "is the size of the page, two are halves. Nothing scrolls \u2014 flip sideways, " +
+                "and the page number is in the line at the top of the grid.",
+        )
+        Help(
+            "Waveform detail",
+            "How finely each cell draws its shape. Every slice is a scan over its share of the " +
+                "samples and a rectangle to draw, on up to a hundred and twenty cells at once, so " +
+                "four times the detail is four times the work each time a page opens. The editor " +
+                "always uses the finest: there it is one recording on a whole screen.",
+        )
+        Help(
+            "Waveform colour",
+            "The transcript is written over the wave, so a pale wave makes the words unreadable.",
+        )
+        Help(
+            "When a sample ends",
+            "Continuous plays on down the running order. Single plays the cell you pressed and " +
+                "stops, which is what you want when deciding whether take 14 is the one.",
+        )
+        Help(
+            "Storage",
+            "Counts everything on the phone, including cells currently hidden by a lower cell " +
+                "count. Clear generated audio removes engine voices only \u2014 your own " +
+                "recordings are in a different file and are never touched by it. To delete one " +
+                "of your takes, long press its cell.",
+        )
+        Help(
+            "Keys",
+            "AssemblyAI transcribes and is required. Speechify and Hume are the two voice " +
+                "engines and either one is enough; Hume needs its API key AND its secret key. " +
+                "Anything else in the note is kept and testable and never called by this app. " +
+                "Keys are never displayed anywhere.",
+        )
+        Help(
+            "Permissions",
+            "The overlay is what lets you record without leaving the app you are reading from: " +
+                "the level line across the top, and the triangle under the camera that stops this " +
+                "cell and starts the next. Android calls that an accessibility service and will " +
+                "not switch it on until it is unlocked from the app's own page \u2014 so: 1, then " +
+                "the three dots at the top right, then Allow restricted settings, then 2. It does " +
+                "not read your screen.",
+        )
+        Spacer(Modifier.height(24.dp))
     }
 }
 

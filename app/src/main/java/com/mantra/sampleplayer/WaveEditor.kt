@@ -210,14 +210,31 @@ fun WaveEditor(
             Button("Play", Modifier.weight(1f), solid = true, accent = PLAY_AMBER) { onPreview() }
             Button("Whole take", Modifier.weight(1f)) { onReset() }
         }
+        // ── THE HELP, DOWN HERE ──────────────────────────────────────────────────────────────
+        Spacer(Modifier.height(28.dp))
         Text(
-            "Drag from the left half to move the start, from the right half to move the stop. " +
-                "Nothing is cut: these are two numbers beside the recording, and Whole take puts " +
-                "them back to the ends.",
-            color = Color(0xFF71717A),
-            fontSize = 10.sp,
+            "WHAT THESE DO",
+            color = Color(0xFF94A3B8),
+            fontSize = 11.sp,
             fontFamily = FontFamily.Monospace,
-            modifier = Modifier.padding(top = 6.dp),
+        )
+        Spacer(Modifier.height(6.dp))
+        Help(
+            "The two handles",
+            "Drag from the LEFT half of the waveform to move the start, from the RIGHT half to " +
+                "move the stop. The side you begin the drag on decides which handle you have, and " +
+                "it does not change under your finger halfway through.",
+        )
+        Help(
+            "Play",
+            "Plays this cell between the points, once. Closing this screen while a set is " +
+                "playing applies the new points immediately \u2014 you do not have to stop and " +
+                "start again to hear the change.",
+        )
+        Help(
+            "Whole take",
+            "Puts both points back to the ends. Nothing is ever cut: these are two numbers stored " +
+                "beside the recording, the audio is untouched, and this is available for ever.",
         )
     }
 }

@@ -571,6 +571,7 @@ class MainActivity : ComponentActivity() {
             // thing it configures leaves nowhere to look while deciding, and v5 of the stopwatch
             // shipped exactly that and had no way back out of it in landscape.
             SettingsScreen(
+                version = BuildConfig.VERSION_NAME,
                 playMode = playMode,
                 slotCount = slotCount,
                 pageSpread = pageSpread,
@@ -777,8 +778,16 @@ class MainActivity : ComponentActivity() {
             val overwrite = confirmOverwrite
             if (overwrite != null) {
                 ConfirmBar(
-                    question = "Record over cell ${overwrite + 1}? The take there is deleted.",
+                    question = "Cell ${overwrite + 1} already has a take. Play it, or record over it?",
                     onCancel = { confirmOverwrite = null },
+                    onPlay = {
+                        // WHAT THEY ALMOST CERTAINLY MEANT. Switching the mode as well as playing
+                        // is the point: leaving it in REC would ask the same question on the next
+                        // cell, having just been told the answer.
+                        confirmOverwrite = null
+                        armed = Mode.PLAYING
+                        startPlaying(overwrite, project, playMode) { playing = it }
+                    },
                     onOk = {
                         confirmOverwrite = null
                         if (!hasMic()) {

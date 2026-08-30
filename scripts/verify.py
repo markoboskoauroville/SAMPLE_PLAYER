@@ -642,8 +642,8 @@ check(
     "the handle must not change under the finger halfway through a drag",
 )
 check(
-    "the rule is written on the screen, not left to be discovered",
-    "left half" in editor_code and "right half" in editor_code,
+    "the rule is written down where the help lives",
+    "LEFT half" in editor_code and "RIGHT half" in editor_code,
     "a gesture nobody is told about is a gesture nobody uses",
 )
 
@@ -839,10 +839,25 @@ for screen in ["SlotOptions.kt", "Settings.kt", "KeysScreen.kt", "WaveEditor.kt"
 # Two or three lines of explanation under every button is useful once, noise the second time, and
 # by the tenth time it is a screen four times taller than it needs to be with the control you want
 # somewhere in the middle of it.
+# EVERY SCREEN, not just the cell menu. Two or three lines under every control is useful once,
+# noise the second time, and by the fiftieth time it is a screen three times taller than it needs to
+# be with the thing you came for somewhere in the middle of it.
+for screen in ["SlotOptions.kt", "Settings.kt", "KeysScreen.kt", "WaveEditor.kt", "VoiceCard.kt"]:
+    body = code_only(src[screen])
+    check(
+        screen + " keeps its help in one block",
+        "WHAT THESE DO" in body and body.count("Help(") >= 3,
+        str(body.count("Help(")) + " entries, all at the bottom",
+    )
 check(
-    "the cell menu keeps its help in one block",
-    "fun Help(" in options_code and "WHAT THESE DO" in options_code,
-    "somebody who wants the explanation scrolls to the end; everybody else never sees it",
+    "there is one Help composable, not one per screen",
+    sum(1 for t in src.values() if "fun Help(" in code_only(t)) == 1,
+    "five copies would drift apart the first time one was restyled",
+)
+check(
+    "the version is on the settings screen",
+    "Settings   v$version" in settings_code,
+    "the first question about any bug is which build it happened on",
 )
 check(
     "the loop control is one glyph",
