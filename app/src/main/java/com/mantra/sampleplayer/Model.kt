@@ -164,7 +164,16 @@ data class Slot(
     val loop: Boolean = false,
     val lengthMs: Int = 0,
 ) {
-    val isEmpty: Boolean get() = !hasOriginal
+    /**
+     * WHETHER THIS CELL HAS ANYTHING TO PLAY, which is not the same as whether it was recorded.
+     *
+     * A cell can now be filled by reading a text file aloud, and such a cell has a generated voice
+     * and no take of Baba's at all. Every rule about PLAYING has to ask this; every rule about the
+     * irreplaceable recording still asks [hasOriginal].
+     */
+    val hasAudio: Boolean get() = hasOriginal || generated.isNotEmpty()
+
+    val isEmpty: Boolean get() = !hasAudio
 
     /**
      * The title, which is never stored while it can be derived.
@@ -203,7 +212,7 @@ data class Project(
     /** Which engine's audio the lines play, or null for Baba's own recordings. */
     val engine: String? = null,
 ) {
-    val filled: List<Int> get() = slots.filter { it.hasOriginal }.map { it.index }
+    val filled: List<Int> get() = slots.filter { it.hasAudio }.map { it.index }
 
     /** How many cells this project has. Not a constant: it is chosen in settings. */
     val size: Int get() = slots.size
@@ -252,7 +261,11 @@ object Gesture {
         if (slot !in project.slots.indices) return Press.Refused("no such slot")
         return when (mode) {
             Mode.STOPPED ->
-                if (project.slot(slot).hasOriginal) {
+                // ASKS ABOUT A GENERATED CELL TOO. Recording over one destroys the text that was
+                // read and the voice that read it, and the text came from a file this app does not
+                // keep. The take is the only thing that cannot be made again, but it is not the
+                // only thing that would be lost without warning.
+                if (project.slot(slot).hasAudio) {
                     Press.ConfirmOverwrite(slot)
                 } else {
                     Press.StartRecording(slot)
@@ -268,7 +281,7 @@ object Gesture {
                 }
 
             Mode.PLAYING ->
-                if (project.slot(slot).hasOriginal) {
+                if (project.slot(slot).hasAudio) {
                     // A MARKED CELL LOOPS INSTEAD OF SEEKING. Both are still a press in play mode
                     // and neither can record, which is the property this branch exists to hold.
                     if (project.slot(slot).loop) Press.ToggleLoop(slot) else Press.SeekTo(slot)

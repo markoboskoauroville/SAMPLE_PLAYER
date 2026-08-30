@@ -74,6 +74,20 @@ class Words(context: Context) {
     }
 
     /**
+     * WHICH voice, not just which engine, as .
+     *
+     * The engine alone was enough while a voice was only ever chosen through the chooser, which
+     * speaks the cell there and then. Reading a text file into a cell that already has a voice has
+     * to speak it again LATER, and "Hume" is not something you can send to Hume.
+     */
+    fun voiceId(id: String, slot: Int): String? =
+        read(id, slot)["voiceid"]?.takeIf { it.isNotBlank() }
+
+    fun setVoiceId(id: String, slot: Int, key: String?) {
+        write(id, slot, read(id, slot) + ("voiceid" to (key ?: "")))
+    }
+
+    /**
      * Everything derived from a recording, gone.
      *
      * Called when a cell is re-recorded. The words are about a phrase that is no longer there and

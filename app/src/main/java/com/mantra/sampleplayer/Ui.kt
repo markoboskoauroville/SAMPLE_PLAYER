@@ -81,7 +81,7 @@ fun Tile(
     val longPress by rememberUpdatedState(onLongPress)
     val edge = when {
         recording -> RECORDING_RED
-        slot.hasOriginal -> FILLED_EDGE
+        slot.hasAudio -> FILLED_EDGE
         else -> EMPTY_EDGE
     }
     Column(
@@ -112,7 +112,7 @@ fun Tile(
         Row(Modifier.fillMaxWidth()) {
         Text(
             "%02d".format(slot.index + 1),
-            color = if (slot.hasOriginal) Color.White else Color(0xFF71717A),
+            color = if (slot.hasAudio) Color.White else Color(0xFF71717A),
             fontSize = 9.sp,
             maxLines = 1,
             fontFamily = FontFamily.Monospace,

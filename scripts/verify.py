@@ -1117,6 +1117,44 @@ check(
     "it could only loop the original while Speechify returned mp3",
 )
 
+# ── A TEXT FILE CAN BE READ ALOUD ──────────────────────────────────
+text_code = code_only(src["Text.kt"])
+check(
+    "the text is cleaned before it is spoken",
+    "fun forSpeaking(" in text_code and "Text.forSpeaking(" in ui_code,
+    "a file has a byte-order mark, line endings and possibly two hundred kilobytes in it",
+)
+check(
+    "it is cut here rather than silently at the far end",
+    "MAX_CHARS" in text_code and "fun report(" in text_code,
+    "Speechify truncates at two thousand characters and bills what it was sent",
+)
+check(
+    "a cut lands on a sentence or a space, never mid-word",
+    "lastIndexOfAny" in text_code and "lastIndexOf(' ')" in text_code,
+    "half a word is something a voice will try to pronounce",
+)
+check(
+    "a cell with no voice is asked for one rather than guessing",
+    "pick Speechify or Hume to read it" in ui_code,
+    "the engine buttons are directly below the message",
+)
+check(
+    "playing rules ask whether there is audio, not whether it was recorded",
+    "val hasAudio" in model_code and "project.slot(slot).hasAudio" in model_code,
+    "a cell filled from a text file has no take of Baba's at all",
+)
+check(
+    "the irreplaceable file still has its own question",
+    "hasOriginal" in model_code and "generated.isNotEmpty()" in model_code,
+    "hasAudio is for playing; hasOriginal is for the thing that cannot be made again",
+)
+check(
+    "which voice is remembered, not just which engine",
+    "fun setVoiceId(" in code_only(src["Words.kt"]),
+    "reading a file later has to speak it again, and Hume is not something you can send to Hume",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -1137,7 +1175,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 215, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 230, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -1149,7 +1187,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 174:
+if len(checks_run) < 181:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

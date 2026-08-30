@@ -870,6 +870,107 @@ class SamplePlayerTest {
         assertEquals(Press.SeekTo(3), Gesture.press(Mode.PLAYING, filled(3), 3))
     }
 
+    // ── READING A TEXT FILE ALOUD ────────────────────────────────────
+
+    @Test fun `newlines become spaces rather than disappearing`() {
+        // A voice reads a line break as nothing at all, so a paragraph broken across lines
+        // arrives as fragments run together: "the end ofone line".
+        assertEquals("one two three", Text.forSpeaking("one\ntwo\r\nthree"))
+        assertEquals("one two", Text.forSpeaking("one\t\ttwo"))
+    }
+
+    @Test fun `a byte order mark is not read aloud`() {
+        assertEquals("Danas", Text.forSpeaking("\uFEFFDanas"))
+    }
+
+    @Test fun `runs of spaces collapse and the ends are trimmed`() {
+        assertEquals("a b", Text.forSpeaking("   a     b   "))
+    }
+
+    @Test fun `a non-breaking space is a space`() {
+        assertEquals("a b", Text.forSpeaking("a\u00A0b"))
+    }
+
+    @Test fun `an empty or whitespace file yields nothing`() {
+        assertEquals("", Text.forSpeaking(""))
+        assertEquals("", Text.forSpeaking("   \n\n  "))
+    }
+
+    @Test fun `text within the limit is untouched`() {
+        val words = "Danas je lijep dan."
+        assertEquals(words, Text.forSpeaking(words))
+        assertTrue(Text.report(words).startsWith("19 characters"))
+    }
+
+    @Test fun `a long file is cut at a sentence end`() {
+        val sentence = "This is a sentence. "
+        val long = sentence.repeat(300)
+        val out = Text.forSpeaking(long)
+        assertTrue("cut to ${out.length}", out.length <= Text.MAX_CHARS)
+        assertTrue("did not end on a sentence: ...${out.takeLast(20)}", out.endsWith("."))
+    }
+
+    @Test fun `a long file with no sentence end is cut at a space, never mid-word`() {
+        val out = Text.forSpeaking(("word ").repeat(1000))
+        assertTrue(out.length <= Text.MAX_CHARS)
+        assertFalse("cut mid-word: ...${out.takeLast(10)}", out.endsWith("wor"))
+    }
+
+    @Test fun `one enormous word is cut at the limit rather than refused`() {
+        val out = Text.forSpeaking("x".repeat(5000))
+        assertEquals(Text.MAX_CHARS, out.length)
+    }
+
+    @Test fun `the report says when something was left behind`() {
+        val long = "This is a sentence. ".repeat(300)
+        assertTrue(Text.report(long).contains("past the engine's limit"))
+        assertFalse(Text.report("short").contains("past"))
+    }
+
+    // ── A CELL CAN HOLD AUDIO IT DID NOT RECORD ─────────────────────────────
+
+    private fun readAloud(index: Int) = Slot(
+        index,
+        hasOriginal = false,
+        words = "Danas je lijep dan.",
+        generated = setOf(Engines.HUME),
+        voice = Engines.HUME,
+    )
+
+    @Test fun `a cell filled from a text file counts as filled`() {
+        val slot = readAloud(3)
+        assertTrue(slot.hasAudio)
+        assertFalse(slot.hasOriginal)
+        assertFalse(slot.isEmpty)
+    }
+
+    @Test fun `it can be played`() {
+        val slots = (0 until DEFAULT_SLOTS).map { if (it == 3) readAloud(it) else Slot(it) }
+        val p = Project("p", "p", slots)
+        assertEquals(Press.SeekTo(3), Gesture.press(Mode.PLAYING, p, 3))
+    }
+
+    @Test fun `it appears in the running order`() {
+        val slots = (0 until DEFAULT_SLOTS).map { if (it == 3) readAloud(it) else Slot(it) }
+        assertEquals(listOf(3), Project("p", "p", slots).filled)
+    }
+
+    @Test fun `recording over it asks first, because the text came from a file we do not keep`() {
+        val slots = (0 until DEFAULT_SLOTS).map { if (it == 3) readAloud(it) else Slot(it) }
+        val p = Project("p", "p", slots)
+        assertEquals(Press.ConfirmOverwrite(3), Gesture.press(Mode.STOPPED, p, 3))
+    }
+
+    @Test fun `a genuinely empty cell is still recorded into without a question`() {
+        assertEquals(Press.StartRecording(3), Gesture.press(Mode.STOPPED, filled(), 3))
+    }
+
+    @Test fun `its menu can still be opened`() {
+        val slots = (0 until DEFAULT_SLOTS).map { if (it == 3) readAloud(it) else Slot(it) }
+        val p = Project("p", "p", slots)
+        assertEquals(Press.Clear(3), Gesture.longPress(Mode.STOPPED, p, 3))
+    }
+
     // ── THE PENDING TAKE ────────────────────────────────────────────
 
     @Test fun `a take in progress is never written over the recording it may replace`() {

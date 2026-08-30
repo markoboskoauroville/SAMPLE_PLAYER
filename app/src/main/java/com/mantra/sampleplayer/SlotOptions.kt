@@ -53,6 +53,7 @@ fun SlotOptions(
     onSave: () -> Unit,
     onLoop: () -> Unit,
     onTranscribe: () -> Unit,
+    onReadText: () -> Unit,
     onEngine: (String) -> Unit,
     onRevert: () -> Unit,
     onBack: () -> Unit,
@@ -108,6 +109,9 @@ fun SlotOptions(
         Button("Transcribe", Modifier.fillMaxWidth()) { onTranscribe() }
         Spacer(Modifier.height(6.dp))
 
+        Button("Read a text file aloud", Modifier.fillMaxWidth()) { onReadText() }
+        Spacer(Modifier.height(6.dp))
+
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(
                 label = "Speechify",
@@ -147,6 +151,14 @@ fun SlotOptions(
         Spacer(Modifier.height(6.dp))
         Help("Edit playback points", "Drag where this cell starts and stops. Nothing is cut: the recording is untouched and the points go back to the ends whenever you want.")
         Help("\u221e", "A flag, not a start button. A marked cell carries \u221e on the grid, and in play mode one press starts it looping and the next stops it. Held in memory and repeated with no gap at the join, between the playback points.")
+        Help(
+            "Read a text file aloud",
+            "The other direction: instead of speaking a line and having it transcribed, hand the " +
+                "app a text file and have a voice read it. The words become the cell's text and " +
+                "the chosen voice speaks them. If this cell has no voice yet you will be asked " +
+                "for one first. It works on an empty cell, so a set can mix lines you recorded " +
+                "with lines you wrote.",
+        )
         Help("Transcribe", "The words become the title of the cell, exactly as spoken. It also happens on its own on the way to a voice, so you are never asked to do it twice.")
         Help("Speechify / Hume", "Opens the voice chooser for that engine. " + if (voiceCount > 0) "$voiceCount voices loaded." else "An engine with no key is not offered; import keys in settings.")
         Help("Play my own recording again", "Your recording was never replaced. The generated voice sits beside it in a different file, and this points the cell back at yours.")

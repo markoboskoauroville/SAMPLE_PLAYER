@@ -74,6 +74,27 @@ class MainActivity : ComponentActivity() {
      */
     private var onKeyFile: ((String) -> Unit)? = null
 
+    private var onTextFile: ((String) -> Unit)? = null
+
+    /**
+     * A TEXT FILE TO BE READ ALOUD.
+     *
+     * The other direction through the app: instead of speaking a line and having it transcribed,
+     * hand it words and have a voice say them. `OpenDocument` rather than a text box, for the same
+     * reason keys arrive as a file — a phone keyboard is the thing this app exists to avoid.
+     *
+     * `text/*` first but `*/ *` accepted, because a note exported from a phone arrives as
+     * `application/octet-stream` about as often as not, and a picker that shows nothing is
+     * indistinguishable from a picker that is broken.
+     */
+    private val pickTextFile = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
+        }.getOrNull()
+        onTextFile?.invoke(text.orEmpty())
+    }
+
     private var pendingSave: java.io.File? = null
 
     /**
@@ -190,6 +211,44 @@ class MainActivity : ComponentActivity() {
      * mp3, so it needs a decoder — [Player] takes PCM out of a WAV and would have nothing to do
      * with it. Nothing about the trim applies here either: a preview is a whole short clip.
      */
+    /**
+     * Speak the cell's own text in the voice it is already set to.
+     *
+     * Used when a text file is read into a cell that already has a voice. Choosing a voice from
+     * the chooser takes the other path and both end in the same place, which is deliberate: one
+     * of them would otherwise drift and it would be this one, used less.
+     */
+    private fun speakCurrentText(slot: Int, engineId: String, onStage: (String) -> Unit) {
+        work(onStage) {
+            val words = Words(this).get(DEFAULT_PROJECT, slot)
+            if (words.isBlank()) {
+                setStage("nothing to read")
+                return@work
+            }
+            setStage("reading it in the $engineId voice…")
+            val chosen = Voice(engineId, voiceIdFor(slot, engineId), engineId)
+            if (chosen.id.isBlank()) {
+                setStage("this cell has no voice chosen yet")
+                return@work
+            }
+            val (bytes, why) = Engines.speak(chosen, words, keys.ring(engineId))
+            if (bytes == null) {
+                setStage(why)
+                return@work
+            }
+            val out = Paths.generated(filesDir, DEFAULT_PROJECT, slot, engineId)
+            out.parentFile?.mkdirs()
+            out.writeBytes(bytes)
+            runOnUiThread { onStage("read into cell ${slot + 1}") }
+        }
+    }
+
+    /** Which voice this cell last used on that engine, remembered beside the cell. */
+    private fun voiceIdFor(slot: Int, engineId: String): String =
+        Words(this).voiceId(DEFAULT_PROJECT, slot).orEmpty().let {
+            if (it.startsWith("$engineId/")) it.removePrefix("$engineId/") else ""
+        }
+
     private fun playFile(f: File) {
         player?.release()
         player = MediaPlayer().apply {
@@ -327,6 +386,11 @@ class MainActivity : ComponentActivity() {
                         out.parentFile?.mkdirs()
                         out.writeBytes(bytes)
                         Words(this@MainActivity).setVoice(project.id, choosing, card.engine)
+                        Words(this@MainActivity).setVoiceId(
+                            project.id,
+                            choosing,
+                            VoiceSearch.key(card),
+                        )
                         runOnUiThread {
                             project = load(project.id, slotCountNow())
                             stage = "${card.name} saved. Your recording is untouched."
@@ -547,6 +611,30 @@ class MainActivity : ComponentActivity() {
                             stage = said
                         }
                     }
+                },
+                onReadText = {
+                    onTextFile = { raw ->
+                        val words = Text.forSpeaking(raw)
+                        if (words.isBlank()) {
+                            stage = "nothing readable in that file"
+                        } else {
+                            Words(this@MainActivity).put(project.id, openSlot, words)
+                            project = load(project.id, slotCountNow())
+                            val voice = project.slot(openSlot).voice
+                            if (voice == null) {
+                                // NO VOICE YET, SO ASK FOR ONE. The engine buttons are directly
+                                // below this message and choosing one leads to the chooser, whose
+                                // Use already speaks whatever text the cell holds — so the
+                                // imported words are read the moment a voice is picked, with no
+                                // second path to keep in step.
+                                stage = Text.report(raw) +
+                                ". Now pick Speechify or Hume to read it."
+                            } else {
+                                speakCurrentText(openSlot, voice) { stage = it }
+                            }
+                        }
+                    }
+                    pickTextFile.launch(arrayOf("text/*", "application/octet-stream", "*/*"))
                 },
                 onSave = {
                     pendingSave = Paths.original(filesDir, project.id, openSlot)
