@@ -361,6 +361,9 @@ class MainActivity : ComponentActivity() {
                 // The editor draws one recording across a whole screen, so it always takes
                 // the finest the setting allows: the cost that made this a setting is
                 // thirty cells at once, and here there is one.
+                // The editor draws the ORIGINAL even when a voice is chosen, because the
+                // points it sets belong to the recording. Drawing the generated audio here would
+                // be dragging handles across one waveform and applying them to another.
                 waveform = waveformOf(project.id, editing, WAVEFORM_SCALES.last()),
                 waveTint = Color(waveColour(waveColour)),
                 trim = t,
@@ -393,7 +396,12 @@ class MainActivity : ComponentActivity() {
                     if (wasLooping) {
                         Looper.stop()
                         Looper.start(
-                            Paths.original(filesDir, project.id, editing),
+                            Paths.playing(
+                                filesDir,
+                                project.id,
+                                editing,
+                                project.slot(editing).voice,
+                            ),
                             editing,
                             Words(this@MainActivity).trim(project.id, editing),
                         )
@@ -684,7 +692,7 @@ class MainActivity : ComponentActivity() {
                         waveform = if (recordingSlot == slot.index) {
                             liveShape
                         } else {
-                            waveformOf(project.id, slot.index, waveScale)
+                            waveformOf(project.id, slot.index, waveScale, slot.voice)
                         },
                         onPress = {
                             when (val p = Gesture.press(mode, project, slot.index, recordingSlot)) {
@@ -722,8 +730,16 @@ class MainActivity : ComponentActivity() {
                                         player?.let { runCatching { it.stop() }; it.release() }
                                         player = null
                                         playing = null
+                                        // LOOPS WHAT THE CELL PLAYS. It could only ever loop
+                                        // the original while Speechify returned mp3; both engines
+                                        // return WAV now, so the loop is the thing being heard.
                                         val why = Looper.start(
-                                            Paths.original(filesDir, project.id, p.slot),
+                                            Paths.playing(
+                                                filesDir,
+                                                project.id,
+                                                p.slot,
+                                                project.slot(p.slot).voice,
+                                            ),
                                             p.slot,
                                             Words(this@MainActivity).trim(project.id, p.slot),
                                         )
@@ -933,8 +949,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun waveformOf(id: String, slot: Int, scale: Int = 1): FloatArray {
-        val f = Paths.original(filesDir, id, slot)
+    /**
+     * THE SHAPE OF WHAT WILL ACTUALLY SOUND.
+     *
+     * It drew the original recording whatever the cell was set to play. Choose a voice for a cell
+     * and the wave stayed the shape of Baba's take while the audio was somebody else's, saying the
+     * same words at a different length — so the playhead crossed a shape that had nothing to do
+     * with what was in the room. A picture that disagrees with the sound is worse than no picture.
+     *
+     * [voice] null means the original, which is also the fallback when a generated file is missing.
+     */
+    private fun waveformOf(
+        id: String,
+        slot: Int,
+        scale: Int = 1,
+        voice: String? = null,
+    ): FloatArray {
+        val f = Paths.playing(filesDir, id, slot, voice)
         if (!f.isFile) return FloatArray(0)
         return waveform(Recorder.read(f), waveformBuckets(scale))
     }

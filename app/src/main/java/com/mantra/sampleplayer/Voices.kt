@@ -136,6 +136,22 @@ object Engines {
      * HUME PACES AT ABOUT TWELVE SECONDS. A faster call returns 429, which is valid and throttled
      * and rests the account rather than condemning it.
      */
+    /**
+     * WAV FROM BOTH ENGINES, NOT MP3.
+     *
+     * Speechify was asked for mp3 and the bytes were written to a file called `<engine>.wav`, so
+     * the app was storing an MP3 under a WAV name — which nothing complained about, because
+     * MediaPlayer sniffs the content and plays it happily.
+     *
+     * It matters for two things that are not playback. **A waveform cannot be drawn from an MP3**
+     * without a decoder, so a cell with a generated voice went on showing the shape of the
+     * original recording while playing something else. And **an MP3 cannot go into an AudioTrack
+     * static buffer**, so the gapless loop could only ever loop Baba's own take.
+     *
+     * Measured 30.8.2026: `audio_format: "wav"` returns 48 kHz mono 16-bit PCM, and Hume already
+     * returns WAV. Both are now drawable and both are loopable. The file is about six times the
+     * size of the mp3, which for a spoken phrase is a few hundred kilobytes.
+     */
     fun speak(
         voice: Voice,
         text: String,
@@ -152,7 +168,7 @@ object Engines {
                     "https://api.sws.speechify.com/v1/audio/speech",
                     mapOf("Authorization" to "Bearer ${c.key}"),
                     """{"input":${quote(text)},"voice_id":"${voice.id}",""" +
-                        """"audio_format":"mp3","model":"${voice.model.ifBlank { modelFor(voice.id) }}"}""",
+                        """"audio_format":"wav","model":"${voice.model.ifBlank { modelFor(voice.id) }}"}""",
                 )
                 HUME -> Net.postJson(
                     "https://api.hume.ai/v0/tts",

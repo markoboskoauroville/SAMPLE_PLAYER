@@ -814,8 +814,40 @@ check(
 )
 check(
     "a cell can be transcribed on its own",
-    "onTranscribe" in ui_code and "Transcribe this cell" in options_code,
+    "onTranscribe" in ui_code and '"Transcribe"' in options_code,
     "asking for the words is a different thing from asking for a voice",
+)
+
+# ── NO SCREEN REPEATS ITSELF ──────────────────────────────────────
+#
+# The cell menu shipped with Transcribe, Loop and Save on it TWICE, for three versions. A patch
+# sliced a block out with its start index AFTER its end index; Python returns "" for that, and the
+# surrounding concatenation then duplicates everything between them. Nothing complained: it
+# compiled, it ran, and both copies worked.
+for screen in ["SlotOptions.kt", "Settings.kt", "KeysScreen.kt", "WaveEditor.kt", "VoiceCard.kt"]:
+    body = code_only(src[screen])
+    labels = re.findall(r'Button\(\s*(?:label = )?"([^"]{3,})"', body)
+    repeated = sorted({lbl for lbl in labels if labels.count(lbl) > 1})
+    check(
+        screen + " has no button twice",
+        not repeated,
+        str(len(labels)) + " buttons, repeated: " + str(repeated or "none"),
+    )
+
+# ── CONTROLS FIRST, HELP AT THE BOTTOM ────────────────────────────
+#
+# Two or three lines of explanation under every button is useful once, noise the second time, and
+# by the tenth time it is a screen four times taller than it needs to be with the control you want
+# somewhere in the middle of it.
+check(
+    "the cell menu keeps its help in one block",
+    "fun Help(" in options_code and "WHAT THESE DO" in options_code,
+    "somebody who wants the explanation scrolls to the end; everybody else never sees it",
+)
+check(
+    "the loop control is one glyph",
+    "Loop is on for this cell" not in options_code,
+    "the symbol says in one character what six words were saying",
 )
 check(
     "the title is what was said, in full",
@@ -998,6 +1030,28 @@ check(
     "otherwise the change just made is not the change being listened to",
 )
 
+# ── THE PICTURE AGREES WITH THE SOUND ──────────────────────────────
+check(
+    "the tile draws the audio that will actually play",
+    "waveformOf(project.id, slot.index, waveScale, slot.voice)" in ui_code,
+    "it drew the original while playing somebody else saying the same words at another length",
+)
+check(
+    "the WAV reader walks chunks instead of assuming byte 44",
+    "private fun layout(" in recorder_code and '"data"' in recorder_code,
+    "Speechify puts a LIST chunk before the data and its size field is a streaming placeholder",
+)
+check(
+    "both engines are asked for WAV",
+    '"audio_format":"wav"' in voices_code,
+    "an mp3 stored as .wav cannot be drawn and cannot go into a static AudioTrack buffer",
+)
+check(
+    "the loop plays what the cell plays",
+    ui_code.count("Looper.start(") == 2 and "Paths.original(filesDir, project.id, p.slot)" not in ui_code,
+    "it could only loop the original while Speechify returned mp3",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -1018,7 +1072,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 195, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 200, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -1030,7 +1084,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 150:
+if len(checks_run) < 160:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

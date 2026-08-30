@@ -247,6 +247,78 @@ class SamplePlayerTest {
         root.deleteRecursively()
     }
 
+    @Test fun `a LIST chunk before the data does not shift every sample`() {
+        // MEASURED on a real Speechify WAV, 30.8.2026: RIFF / fmt / LIST(26) / data, so the audio
+        // begins at byte 78. Reading from 44 gives twenty-six bytes of metadata as a click and
+        // everything after it offset — which is what a generated voice sounded like.
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "speechify.wav")
+        f.writeBytes(withList(48_000, 200))
+        assertEquals(48_000, Recorder.rateOf(f))
+        // 200 bytes of data is 100 frames at 48 kHz, which is 2ms.
+        assertEquals(2, Recorder.lengthMs(f))
+        assertEquals(100, Recorder.read(f).size)
+        root.deleteRecursively()
+    }
+
+    @Test fun `a streaming placeholder size is not believed either`() {
+        // Speechify sends 0xFFFFFFFF for the data size. Taken literally that is four gigabytes.
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "streamed.wav")
+        val bytes = withList(48_000, 200)
+        // overwrite the data size with the placeholder
+        for (i in 0 until 4) bytes[74 + i] = 0xFF.toByte()
+        f.writeBytes(bytes)
+        assertEquals(100, Recorder.read(f).size)
+        assertTrue(Recorder.lengthMs(f) < 100)
+        root.deleteRecursively()
+    }
+
+    @Test fun `a plain file this app wrote still reads from 44`() {
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "ours.wav")
+        f.writeBytes(wavHeader(48_000, 96) + ByteArray(96))
+        assertEquals(48, Recorder.read(f).size)
+        assertEquals(48_000, Recorder.rateOf(f))
+        root.deleteRecursively()
+    }
+
+    @Test fun `something that is not a WAV at all does not crash the reader`() {
+        val root = Files.createTempDirectory("sp").toFile()
+        val f = File(root, "notawav.bin")
+        f.writeBytes(ByteArray(200) { 7 })
+        // Falls back rather than throwing: a corrupt file must not take the grid down with it.
+        assertEquals(Dsp.SAMPLE_RATE, Recorder.rateOf(f))
+        root.deleteRecursively()
+    }
+
+    /** RIFF / fmt / LIST / data, the way Speechify sends it. */
+    private fun withList(rate: Int, dataBytes: Int): ByteArray {
+        val listBytes = 26
+        val total = 12 + 24 + (8 + listBytes) + 8 + dataBytes
+        val h = ByteArray(total)
+        fun le32(at: Int, v: Int) {
+            h[at] = (v and 0xFF).toByte()
+            h[at + 1] = ((v shr 8) and 0xFF).toByte()
+            h[at + 2] = ((v shr 16) and 0xFF).toByte()
+            h[at + 3] = ((v shr 24) and 0xFF).toByte()
+        }
+        "RIFF".toByteArray().copyInto(h, 0)
+        le32(4, total - 8)
+        "WAVE".toByteArray().copyInto(h, 8)
+        "fmt ".toByteArray().copyInto(h, 12)
+        le32(16, 16)
+        h[20] = 1; h[22] = 1
+        le32(24, rate)
+        le32(28, rate * 2)
+        h[32] = 2; h[34] = 16
+        "LIST".toByteArray().copyInto(h, 36)
+        le32(40, listBytes)
+        "data".toByteArray().copyInto(h, 36 + 8 + listBytes)
+        le32(36 + 8 + listBytes + 4, dataBytes)
+        return h
+    }
+
     @Test fun `a header claiming an absurd rate is not believed`() {
         val root = Files.createTempDirectory("sp").toFile()
         val f = File(root, "b.wav")

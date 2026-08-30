@@ -311,41 +311,86 @@ object Recorder {
         }
     }
 
-    /** Read a WAV back as samples, for the waveform and the quality check. */
+    /**
+     * WHERE THE AUDIO ACTUALLY STARTS, AND AT WHAT RATE.
+     *
+     * NOT BYTE 44. That is where it starts in a file this app wrote, and nowhere else. Speechify
+     * returns WAV with a `LIST` chunk between `fmt ` and `data`, so the audio begins at byte 78 —
+     * reading from 44 gives you twenty-six bytes of metadata rendered as a click and every sample
+     * after it shifted. And its `data` size field is `0xFFFFFFFF`, a streaming placeholder, so a
+     * length taken from the header is four gigabytes.
+     *
+     * Measured 30.8.2026: Speechify WAV is 48 kHz mono 16-bit PCM with `fmt `, `LIST`, `data`.
+     *
+     * Returns offset, rate and the number of sample frames.
+     */
+    private fun layout(file: File): Triple<Int, Int, Int> {
+        val fallback = Triple(44, Dsp.SAMPLE_RATE, 0)
+        if (!file.isFile || file.length() < 44) return fallback
+        val head = file.inputStream().use { it.readNBytes(4096) }
+        if (head.size < 44) return fallback
+
+        fun le32(at: Int): Long =
+            (head[at].toLong() and 0xFF) or
+                ((head[at + 1].toLong() and 0xFF) shl 8) or
+                ((head[at + 2].toLong() and 0xFF) shl 16) or
+                ((head[at + 3].toLong() and 0xFF) shl 24)
+
+        fun tag(at: Int) = String(head, at, 4, Charsets.US_ASCII)
+
+        if (tag(0) != "RIFF" || tag(8) != "WAVE") return fallback
+
+        var rate = Dsp.SAMPLE_RATE
+        var i = 12
+        // Bounded: a header longer than the buffer is a file this app should not be reading.
+        while (i + 8 <= head.size) {
+            val id = tag(i)
+            val size = le32(i + 4)
+            val body = i + 8
+            if (id == "fmt " && body + 8 <= head.size) {
+                val r = le32(body + 4).toInt()
+                if (r in 8_000..192_000) rate = r
+            }
+            if (id == "data") {
+                // 0xFFFFFFFF is a streaming placeholder, and so is any size past the file.
+                val onDisk = file.length() - body
+                val frames = (if (size <= 0 || size > onDisk) onDisk else size) / 2
+                return Triple(body, rate, frames.toInt())
+            }
+            if (size <= 0) break
+            i = body + size.toInt() + (size.toInt() and 1)
+        }
+        return Triple(44, rate, ((file.length() - 44) / 2).toInt())
+    }
+
+    /** The rate this file was made at, from its own header. */
+    fun rateOf(file: File): Int = layout(file).second
+
+    /** Length in milliseconds, from the real data chunk rather than from the file size. */
+    fun lengthMs(file: File): Int {
+        val (_, rate, frames) = layout(file)
+        if (frames <= 0) return 0
+        return (frames.toLong() * 1000L / rate).toInt()
+    }
+
+    /**
+     * Read a WAV back as samples, for the waveform and the quality check.
+     *
+     * Through [layout], so it reads the same bytes the player will, whoever wrote the file.
+     */
     fun read(file: File): ShortArray {
-        if (!file.isFile || file.length() <= 44) return ShortArray(0)
+        val (offset, _, frames) = layout(file)
+        if (frames <= 0) return ShortArray(0)
         val raw = file.readBytes()
-        val n = (raw.size - 44) / 2
+        val n = minOf(frames, (raw.size - offset) / 2).coerceAtLeast(0)
         val out = ShortArray(n)
         for (i in 0 until n) {
-            val lo = raw[44 + i * 2].toInt() and 0xFF
-            val hi = raw[44 + i * 2 + 1].toInt()
+            val lo = raw[offset + i * 2].toInt() and 0xFF
+            val hi = raw[offset + i * 2 + 1].toInt()
             out[i] = ((hi shl 8) or lo).toShort()
         }
         return out
     }
 
-    /**
-     * THE RATE THE FILE WAS RECORDED AT, read from its own header.
-     *
-     * Not assumed. Files recorded before the app learned to ask the phone for a better rate are
-     * still 16 kHz, and a length or a loop computed against the wrong rate is wrong by a factor of
-     * three with nothing on screen to say so.
-     */
-    fun rateOf(file: File): Int {
-        if (!file.isFile || file.length() < 44) return Dsp.SAMPLE_RATE
-        val h = file.inputStream().use { it.readNBytes(44) }
-        if (h.size < 44) return Dsp.SAMPLE_RATE
-        val rate = (h[24].toInt() and 0xFF) or
-            ((h[25].toInt() and 0xFF) shl 8) or
-            ((h[26].toInt() and 0xFF) shl 16) or
-            ((h[27].toInt() and 0xFF) shl 24)
-        return if (rate in 8_000..192_000) rate else Dsp.SAMPLE_RATE
-    }
 
-    /** Length in milliseconds from the file size and its own rate, without decoding it. */
-    fun lengthMs(file: File): Int {
-        if (!file.isFile || file.length() <= 44) return 0
-        return (((file.length() - 44) / 2) * 1000L / rateOf(file)).toInt()
-    }
 }
