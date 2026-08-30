@@ -745,6 +745,44 @@ class SamplePlayerTest {
         }
     }
 
+    // ── IS THERE A NEWER ONE ───────────────────────────────────────
+
+    @Test fun `a newer release is newer`() {
+        assertTrue(Updates.compare("20", "v21"))
+        assertTrue(Updates.compare("v20", "v21"))
+    }
+
+    @Test fun `the same release is not newer`() {
+        assertFalse(Updates.compare("v21", "v21"))
+        assertFalse(Updates.compare("21", "v21"))
+    }
+
+    @Test fun `an older release is not offered`() {
+        assertFalse(Updates.compare("v21", "v20"))
+    }
+
+    @Test fun `it compares numbers and not letters`() {
+        // "v9" is greater than "v10" alphabetically, and the day that mattered would have been
+        // the day the app quietly stopped offering updates with nothing on screen to say why.
+        assertTrue(Updates.compare("v9", "v10"))
+        assertFalse(Updates.compare("v10", "v9"))
+        assertTrue(Updates.compare("v9", "v100"))
+    }
+
+    @Test fun `nothing published is not an update`() {
+        assertFalse(Updates.compare("v20", null))
+    }
+
+    @Test fun `a tag with no digits in it cannot claim to be newer`() {
+        assertFalse(Updates.compare("v20", "latest"))
+        assertFalse(Updates.compare("v20", ""))
+    }
+
+    @Test fun `a longer version number still compares part by part`() {
+        assertTrue(Updates.compare("v20", "v20.1"))
+        assertFalse(Updates.compare("v20.1", "v20"))
+    }
+
     // ── THE WAVE COLOUR ─────────────────────────────────────────
 
     @Test fun `a stored colour index outside the list falls back rather than crashing`() {

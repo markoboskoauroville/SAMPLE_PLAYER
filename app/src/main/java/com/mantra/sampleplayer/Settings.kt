@@ -126,6 +126,7 @@ fun SettingsScreen(
     pageSpread: Int,
     waveScale: Int,
     waveColour: Int,
+    updateState: String,
     usage: Usage,
     keySummary: List<String>,
     keysHeld: Set<String>,
@@ -135,6 +136,9 @@ fun SettingsScreen(
     onPageSpread: (Int) -> Unit,
     onWaveScale: (Int) -> Unit,
     onWaveColour: (Int) -> Unit,
+    onCheckUpdates: () -> Unit,
+    onGetUpdate: () -> Unit,
+    updateReady: Boolean,
     onClearGenerated: () -> Unit,
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
@@ -258,6 +262,31 @@ fun SettingsScreen(
         Spacer(Modifier.height(6.dp))
         Button("Keys \u2014 import, test, delete", Modifier.fillMaxWidth()) { onKeys() }
 
+        // ── THIS VERSION ─────────────────────────────────────────────────────────────────────
+        //
+        // There is no store behind this app: it is installed by downloading an APK from a GitHub
+        // release, so nothing notices a new version on Baba's behalf. The versions that matter
+        // most are the ones that fix something he has just hit.
+        Heading("VERSION")
+        Text(
+            updateState.ifBlank { "v$version" },
+            color = if (updateReady) PLAY_AMBER else LABEL,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button("Check for updates", Modifier.weight(1f)) { onCheckUpdates() }
+            if (updateReady) {
+                Button(
+                    label = "Download it",
+                    modifier = Modifier.weight(1f),
+                    solid = true,
+                    accent = PLAY_AMBER,
+                ) { onGetUpdate() }
+            }
+        }
+
         // ── PERMISSIONS ──────────────────────────────────────────────────────────────────────
         Heading("PERMISSIONS \u2014 IN THIS ORDER")
         Button("1. Open app properties", Modifier.fillMaxWidth()) { onAppProperties() }
@@ -314,6 +343,15 @@ fun SettingsScreen(
                 "engines and either one is enough; Hume needs its API key AND its secret key. " +
                 "Anything else in the note is kept and testable and never called by this app. " +
                 "Keys are never displayed anywhere.",
+        )
+        Help(
+            "Check for updates",
+            "There is no store behind this app, so nothing tells you when there is a newer one. " +
+                "This asks GitHub for the most recent release and compares it with what is " +
+                "installed. Download it opens the APK in the browser \u2014 the app does not " +
+                "install it for you, because replacing itself would mean asking for the ability " +
+                "to install anything at all, which is a large permission to hold in order to " +
+                "save one tap.",
         )
         Help(
             "Permissions",

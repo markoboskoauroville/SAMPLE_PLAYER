@@ -267,6 +267,8 @@ class MainActivity : ComponentActivity() {
         var pageSpread by remember { mutableStateOf(prefs.pageSpread) }
         var waveScale by remember { mutableStateOf(prefs.waveScale) }
         var waveColour by remember { mutableStateOf(prefs.waveColourIndex) }
+        var updateState by remember { mutableStateOf("") }
+        var updateUrl by remember { mutableStateOf<String?>(null) }
         var starred by remember { mutableStateOf(prefs.starredVoices) }
         var chooserFor by remember { mutableStateOf<Int?>(null) }
         var catalogue by remember { mutableStateOf(emptyList<VoiceInfo>()) }
@@ -666,6 +668,8 @@ class MainActivity : ComponentActivity() {
                 pageSpread = pageSpread,
                 waveScale = waveScale,
                 waveColour = waveColour,
+                updateState = updateState,
+                updateReady = updateUrl != null,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
                 keysHeld = keys.all().map { it.providerId }.toSet(),
@@ -677,6 +681,31 @@ class MainActivity : ComponentActivity() {
                 onPlayMode = {
                     playMode = it
                     prefs.playMode = it
+                },
+                onCheckUpdates = {
+                    updateState = "asking GitHub…"
+                    Thread {
+                        val r = Updates.check(BuildConfig.VERSION_NAME)
+                        runOnUiThread {
+                            updateUrl = if (r.behind) r.url else null
+                            updateState = when {
+                                r.why.isNotBlank() -> r.why
+                                r.behind && r.url != null -> "${r.latest} is out — you have v${r.installed}"
+                                r.behind -> "${r.latest} is out, but that release has no APK on it"
+                                else -> "v${r.installed} — this is the newest"
+                            }
+                        }
+                    }.start()
+                },
+                onGetUpdate = {
+                    // HANDED TO THE BROWSER. Android will not let an app replace itself without
+                    // the package installer, and asking for that permission to save one tap would
+                    // be asking for the ability to install anything at all.
+                    updateUrl?.let {
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
+                        }
+                    }
                 },
                 onWaveColour = {
                     waveColour = it

@@ -1155,6 +1155,29 @@ check(
     "reading a file later has to speak it again, and Hume is not something you can send to Hume",
 )
 
+# ── IS THERE A NEWER ONE ──────────────────────────────────────────
+updates_code = code_only(src["Updates.kt"])
+check(
+    "the version check compares numbers rather than strings",
+    "toInt()" in updates_code and "maxOf(a.size, b.size)" in updates_code,
+    "v9 is greater than v10 alphabetically",
+)
+check(
+    "it looks for the APK rather than the first asset",
+    'endsWith(".apk")' in updates_code,
+    "a release carries a source zip too, and the wrong one does nothing when it is tapped",
+)
+check(
+    "it carries no token",
+    "token" not in updates_code.lower() and "Authorization" not in updates_code,
+    "the repository is public, and an app that carried one would be an app carrying a token",
+)
+check(
+    "the app hands the APK to the browser rather than installing it",
+    "Intent.ACTION_VIEW" in ui_code and "REQUEST_INSTALL_PACKAGES" not in ui_code,
+    "replacing itself would mean the permission to install anything at all",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -1175,7 +1198,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 230, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 240, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -1187,7 +1210,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 181:
+if len(checks_run) < 186:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))
