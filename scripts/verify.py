@@ -69,6 +69,7 @@ tile_code = code_only(src["Ui.kt"])
 dsp_code = code_only(src["Dsp.kt"])
 catalogue_code = code_only(src["Catalogue.kt"])
 chooser_code = code_only(src["VoiceChooser.kt"])
+card_code = code_only(src["VoiceCard.kt"])
 emotions_code = code_only(src["Emotions.kt"])
 
 # ── THE ORIGINAL RECORDING ────────────────────────────────────────────────────────────────────
@@ -931,13 +932,46 @@ check(
 )
 check(
     "the preview says the voice's own name",
-    'This is ${v.name}.' in ui_code,
+    'This is ${card.name}.' in ui_code and "Emotions.previewLine(" in ui_code,
     "auditioning ten voices on a long line was ten long waits and ten times the credit",
 )
 check(
+    "both previews go through one function",
+    ui_code.count("private fun hearVoice(") == 1 and ui_code.count("hearVoice(card,") == 2,
+    "two copies would drift and the one used less would be the drifted one",
+)
+check(
     "acting directions are offered for Hume and not for Speechify",
-    "fun availableFor(" in emotions_code and "Emotions.availableFor(engine)" in chooser_code,
+    "fun availableFor(" in emotions_code
+    and "Emotions.availableFor(voice.engine)" in card_code,
     "Speechify has no description field; offering the control would be a lie",
+)
+check(
+    "every direction carries a glyph and something to say",
+    "val glyph: String" in emotions_code and "val spoken: String" in emotions_code,
+    "a direction found by shape before it is read, and a preview short enough to hear eight of",
+)
+check(
+    "the emotion preview is the name and the emotion, not the line",
+    "fun previewLine(" in emotions_code,
+    "eight emotions at twelve seconds each is two minutes to hear four seconds of difference",
+)
+
+# \u2500\u2500 THE VOICE CARD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+check(
+    "the chooser opens a card rather than acting on the row",
+    "onOpen" in chooser_code and "onUse" not in chooser_code,
+    "three lines per voice across eleven hundred voices, and nowhere for the emotions to live",
+)
+check(
+    "the card shows every tag the provider publishes",
+    "groupBy({ it.substringBefore" in card_code,
+    "a card that shows two use-cases and an ellipsis has to be tapped to be read",
+)
+check(
+    "the card shows the model the id forces",
+    "Engines.modelFor(voice.id)" in card_code,
+    "it is the rule that decides whether this voice can speak at all",
 )
 check(
     "a direction is sent only when there is one",
@@ -984,7 +1018,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 185, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 195, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -996,7 +1030,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 140:
+if len(checks_run) < 150:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

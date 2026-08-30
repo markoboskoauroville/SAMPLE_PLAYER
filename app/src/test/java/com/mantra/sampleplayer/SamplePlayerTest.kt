@@ -529,6 +529,35 @@ class SamplePlayerTest {
         }
     }
 
+    @Test fun `every direction has one glyph, and no two share it`() {
+        for (d in Emotions.ALL) {
+            assertEquals(d.label + " glyph is not one character", 1, d.glyph.length)
+        }
+        assertEquals(Emotions.ALL.size, Emotions.ALL.map { it.glyph }.toSet().size)
+    }
+
+    @Test fun `every direction has something short to say`() {
+        for (d in Emotions.ALL) {
+            assertTrue(d.label + " has no spoken form", d.spoken.startsWith("is "))
+            assertTrue(d.label + " preview is too long", d.spoken.length < 32)
+        }
+    }
+
+    @Test fun `the preview line is the name and the emotion, nothing else`() {
+        // Eight emotions is eight calls and Hume paces at about twelve seconds. A full sentence
+        // would be two minutes of waiting to hear four seconds of difference.
+        val angry = Emotions.ALL.single { it.label == "Angry" }
+        assertEquals("John is angry.", Emotions.previewLine("John", angry))
+        val happy = Emotions.ALL.single { it.label == "Happy" }
+        assertEquals("Beatrice is happy.", Emotions.previewLine("Beatrice", happy))
+    }
+
+    @Test fun `a direction can be found again from the text that was stored`() {
+        // What is stored is the prose sent to Hume, so the card has to map back to the chip.
+        for (d in Emotions.ALL) assertEquals(d, Emotions.byText(d.text))
+        assertNull(Emotions.byText("something nobody chose"))
+    }
+
     @Test fun `every direction is distinct`() {
         assertEquals(Emotions.ALL.size, Emotions.ALL.map { it.text }.toSet().size)
         assertEquals(Emotions.ALL.size, Emotions.ALL.map { it.label + it.group }.toSet().size)

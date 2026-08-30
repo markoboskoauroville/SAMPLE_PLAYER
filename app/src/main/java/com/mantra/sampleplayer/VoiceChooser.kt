@@ -97,12 +97,9 @@ fun VoiceChooser(
     voices: List<VoiceInfo>,
     loading: String,
     starred: Set<String>,
-    direction: String,
     onSearchChanged: () -> Unit,
     onStar: (VoiceInfo) -> Unit,
-    onPreview: (VoiceInfo) -> Unit,
-    onDirection: (String) -> Unit,
-    onUse: (VoiceInfo) -> Unit,
+    onOpen: (VoiceInfo) -> Unit,
     onClose: () -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -185,17 +182,6 @@ fun VoiceChooser(
             }
         }
 
-        // ── HOW IT IS DELIVERED, HUME ONLY ───────────────────────────────────────────────────
-        if (Emotions.availableFor(engine)) {
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-                Chip("no direction", direction.isBlank()) { onDirection("") }
-                for (d in Emotions.ALL) {
-                    Chip("${d.group}: ${d.label}", direction == d.text) { onDirection(d.text) }
-                }
-            }
-        }
-
         Spacer(Modifier.height(4.dp))
         Text(
             if (loading.isNotBlank()) loading else "${shown.size} of ${voices.size}",
@@ -258,12 +244,10 @@ fun VoiceChooser(
                         )
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Button("Hear it", Modifier.weight(1f)) { onPreview(v) }
-                        Button("Use", Modifier.weight(1f), solid = true, accent = tint(v)) {
-                            onUse(v)
-                        }
-                    }
+                    // THE ROW OPENS THE CARD. It used to carry Hear it and Use, which made the
+                    // list three lines per voice for eleven hundred voices, and gave the
+                    // emotions nowhere to live. Everything about one voice is on its own screen.
+                    Button("Open", Modifier.fillMaxWidth()) { onOpen(v) }
                 }
             }
         }

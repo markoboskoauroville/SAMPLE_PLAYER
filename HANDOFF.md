@@ -1,229 +1,146 @@
 # HANDOFF — Sample Player
 
-**Current version: none. This is the specification, pushed before a line of code exists.**
-Repository public at `markoboskoauroville/SAMPLE_PLAYER`.
+**The finished state of the app. Nothing about how it got here.**
 
-The reasoning behind each decision, including what was tried and rejected, is in
-[`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about a shipped artefact will be
-in `DELIVERY_RECORD.md` from v1 onward.
+Version 14. Repository public at `markoboskoauroville/SAMPLE_PLAYER`.
+Latest artefact: `14-sampleplayer-v14.apk`, tag `v14`.
 
-This document exists before the code because two thirds of `MINIMALIST_STOPWATCH`'s versions exist
-because something decided on a build server was wrong on glass. A specification that can be read and
-corrected in five minutes is cheaper than a build that has to be reversed.
+Every bug, every fix, every feature and every reason is in
+[`DEVELOPMENT.md`](DEVELOPMENT.md). This file is for picking the app up, not for understanding how
+it was built. If you are changing something and want to know why it is the way it is, that is the
+other file, and reading it first will save you undoing a decision twice.
 
 ---
 
-## What it is
+## WHAT IT IS
 
-An Android app for recording thirty spoken phrases, transcribing them, replacing the voice, and
-playing the set back in order. It is a fork of `MINIMALIST_STOPWATCH` and a merge of parts that
-already exist in four other repositories.
+An Android app for recording spoken phrases, transcribing them, replacing the voice, and playing
+the set back with a travelling playhead. Baba records lines for films; this holds a set of them.
 
-**The workflow it exists for:** read a script from the phone screen while the app is in the
-background, speak a line, press the triangle overlay, speak the next one. Samples fill from one slot
-to the next like buckets, without ever leaving the app you are reading from.
+**The workflow it exists for:** read a script off the phone while the app is in the background,
+speak a line, press the triangle overlay, speak the next one. Cells fill one after another without
+leaving the app being read from.
 
-## The project model
+## THE MODEL
 
-**The app holds projects. A project is a set of thirty slots.** Create a new project, record into
-it, and switch between projects from settings. Nothing is global except the keys.
+A **project** is a set of cells. Each cell holds one recording and everything derived from it.
 
-    projects/<project-id>/samples/NN/original.wav      what Baba said. Never overwritten
-    projects/<project-id>/samples/NN/gen/<engine>.wav  what an engine said. Beside, never on top
-    projects/<project-id>/project.json                 titles, transcripts, chosen engine, order
+    projects/<id>/samples/NN/original.wav      Baba's recording. NEVER overwritten
+    projects/<id>/samples/NN/pending.wav       a take in progress, promoted only if usable
+    projects/<id>/samples/NN/gen/<engine>.wav  a generated voice, beside the recording
+    projects/<id>/samples/NN/meta.txt          words, chosen voice, in/out points, loop flag
 
-**`original.wav` is a different filename from every generated file, not a version of the same one.**
-That is the hardest rule in this app: a bug that overwrites it destroys work that cannot be
-re-recorded.
+**`original.wav` is protected by the PATH, not by a convention.** Generated audio lives one
+directory down in `gen/`, so no engine string and no loop index can make one become the other. This
+is the hardest rule in the app: a bug here destroys work that cannot be re-recorded.
 
-## The main view
+## THE SCREENS
 
-Thirty full-width lines, scrolling, in the manner of `MINIMALIST_STOPWATCH` v19's VOICE tab. **Not a
-three across grid.** v17 of the stopwatch replaced a three by three pad grid with nine full-width
-lines for a recorded reason: a grid of small squares reads as a keypad, a full-width line reads as a
-sample list, and the line is what makes a waveform legible at 96 buckets instead of 28. Three across
-at thirty tiles is narrower than the pads that decision rejected.
+**The grid.** Cells, filling the page. Two settings decide the layout: how many cells, and how many
+pages to spread them over. One cell on one page is the size of the page; two are halves; thirty are
+three across and ten down. Nothing scrolls — pages are flipped sideways and the page number is in
+the header line.
 
-Each line carries its title, its waveform, and a playhead. Empty is hollow, filled is solid, one
-icon language with the stopwatch and with TTT mini.
+**Settings.** Cells and pages as steppers, waveform detail 1x–4x, waveform colour, play mode,
+storage, keys, permissions.
 
-**Titles start as `Title 01` … `Title 30`.** After transcription the title becomes the first word of
-the transcribed text, because before transcription there is nothing better to call it.
+**Keys.** Import from a file, test, delete. Ported from `Key_Tester`.
 
-Action buttons across the bottom: **Seq**, **Voice**, and one wide **Play**.
+**Cell options** — long press. Edit playback points, transcribe, loop flag, save to a file, change
+voice, delete.
 
-## The two modes, and the rule that keeps them apart
+**The wave editor.** Two handles on one recording. Yellow is the in point, red is the out point,
+and the side you drag from picks which one.
 
-    STOPPED   pressing a line RECORDS into it. Pressing again stops. Long press clears it
-    PLAYING   pressing a line SEEKS to it and plays from there
+**The voice chooser.** Both catalogues, searchable and faceted.
 
-**One gesture, two meanings, and the mode is the only thing separating them.** This is the shape the
-stopwatch rejected at v1 when it deleted tap-anywhere, on the grounds that two contradictory things
-must not share a surface. It is accepted here because the destructive half is gated behind a mode
-the person can see, and because seeking during playback is the whole point of a player you can jump
-around in.
+Every screen except the grid closes with one × in the top right.
 
-**It is nevertheless the most dangerous line in this document**, and it is written down so it is
-tested rather than assumed: a press that records while the app believed it was playing destroys a
-recording. Test 1 walks both modes against every line state; a mutation flips the mode check.
+## THE TWO MODES
 
-## The playhead
+    REC     pressing a cell records into it. Pressing again stops
+    PLAY    pressing a cell plays from there, or toggles its loop if it is marked
 
-**Every line carries a thin vertical line travelling left to right across its own waveform**, showing
-where inside that sample the playback is. When a sample finishes, the playhead leaves that line and
-appears at the start of the next. Over a full play the mark travels down the whole list.
+One toggle in the bottom right corner, solid in the colour of what it will do. **This is the
+dangerous line in the app**: one gesture, two meanings, and the mode is the only thing between a
+seek and an overwrite. `Gesture.press` is the single place that decides, and recording over a cell
+that already holds a take asks first.
 
-The lines are tiny players and the playhead is what makes them players rather than pictures.
+## RECORDING
 
-**The list follows the playhead by jumping, never by smooth scrolling.** `design-language.md` §8:
-nothing animated that the eye has to follow. When the playing line is off screen the list jumps so
-that it is on screen, and it does not move again until the playhead leaves that line.
+- The best rate the phone gives, probed: 48 kHz, then 44.1, then 16. Mono.
+- Press to start, press again to stop. A ninety second silence ceiling sits underneath, so a
+  forgotten cell does not record the room.
+- Written to `pending.wav`, judged, normalised to **−0.1 dBFS**, then promoted.
+- The quality check runs BEFORE normalisation, or room tone and a quiet phrase are indistinguishable.
+- The rate is written into the WAV header and read back out; older takes are still 16 kHz.
 
-## The capture
+## THE OVERLAY
 
-Ported from `MINIMALIST_STOPWATCH` v17, which is where this behaviour was paid for.
+One accessibility service holds three windows:
 
-- **Press to start, press again to stop.** The stopwatch ends a capture on the silence after a word,
-  because a command is one word long. Here the phrases are of unknown length, so the person decides.
-- **A silence ceiling sits underneath the press**, so a slot left recording by mistake does not
-  record the room until the disk fills. This was not asked for; it is here because a forgotten tile
-  is the obvious failure of press-to-stop and the cost of the guard is one number.
-- **The window reaches back 250ms past the onset.** The level only crosses the threshold once the
-  word is underway, because the first consonant is quieter than the vowel after it. Reading from the
-  crossing point clips the front off every recording, and that fault looks like poor transcription
-  rather than like a bad capture.
-- **A recording is judged before it is stored.** Silent, too short and clipped are refused with an
-  instruction rather than a code. `Dsp.kt` already carries this.
+    hairline    one device pixel across the top, not touchable, the level
+    triangle    under the camera, touchable, only while recording — advances to the next cell
+    status      under the camera, only while generating
 
-## Background recording, and the overlay
+The triangle does one thing: stop this cell and start the next. At the last cell it carries the
+count and stops rather than wrapping. Stopping altogether is done in the app.
 
-This is the part the app exists for and the part `TTT_MINI` already solved. Ported, not redesigned.
+**Permissions, in the order the doors open:** app properties → three dots → Allow restricted
+settings, THEN accessibility. The switch is greyed out until the first is done and nothing on the
+greyed switch says so.
 
-- `MaRecordingService`, a foreground service with `FOREGROUND_SERVICE_TYPE_MICROPHONE`.
-- **Everything overlaid uses `TYPE_ACCESSIBILITY_OVERLAY`**, as `MaRecordingLine` does, so one
-  permission covers the whole app.
+## VOICES
 
-Three overlay pieces, and no more:
+**AssemblyAI** transcribes; required. **Speechify** and **Hume** are the two engines; either is
+enough. The voice is per cell.
 
-    VU METER      a hairline across the very top, full width, one device pixel, not touchable.
-                  TTT mini's MaRecordingLine and MaVuView, ported constant for constant
-    TRIANGLE      a small outlined triangle pointing right, centred under the camera hole.
-                  Touchable. Present only while recording
-    STATUS        a terminal-style status line, as small as it can be read, centred under the
-                  camera hole. Present only while generating. Shows "12 / 30"
+- Speechify: 992 voices, five cursor pages, `Authorization: Bearer`.
+- Hume: 160 voices, two pages, `X-Hume-Api-Key`, and an account is an **api key + secret pair**.
+- The model follows the voice id: `simba-3.2` only for ids ending `_32`, `simba-english` otherwise.
+- Hume takes a `description` — an acting direction read as prose. Speechify has no such field.
+- Preview says the voice's own name, not the cell's text.
 
-**The triangle does one thing: stop this recording and start the next slot.** It is not a general
-transport. To stop recording altogether, switch to the app and stop it there.
+Transcription is never a step asked for on the way to a voice; it happens if it has to.
 
-**At slot 30 the triangle carries the number 30 inside it**, so the last slot is visible without
-counting. It does not wrap. Wrapping would overwrite slot 1 while the phone is in a pocket.
+**Keys** arrive as a pasted note in a text file, parsed by the canonical `KeyParser`. Nothing in
+this app can render a key.
 
-**The VU meter stays, and this is a reversal.** It was removed and put back, because with the app in
-the background there is nothing else saying audio is arriving, and a sampler that keeps room tone as
-the sound of a word fails silently: the slot looks filled, the count is right, and only the
-transcription is wrong.
+## THE FILES
 
-## The Voice view
+| | |
+|---|---|
+| `Model.kt` | the whole app as pure state: cells, press rule, layout, trim, paging |
+| `Vault.kt` | paths and storage arithmetic |
+| `Words.kt` | per-cell transcript, voice, trim, loop flag |
+| `Recorder.kt` | `AudioRecord`, WAV, normalisation |
+| `Dsp.kt` | waveform, quality check, normalise |
+| `Looper.kt` | gapless loop, `AudioTrack` static buffer |
+| `Net.kt` | every HTTP request, one User-Agent |
+| `Keys.kt`, `KeyRing.kt`, `Providers.kt` | the ring, ported from `Key_Tester` |
+| `Catalogue.kt` | both voice catalogues, facets, search |
+| `Emotions.kt` | acting directions |
+| `Voices.kt`, `Transcribe` | speaking and transcribing |
+| `MainActivity.kt` | screens and wiring |
+| `Ui.kt`, `Settings.kt`, `SlotOptions.kt`, `WaveEditor.kt`, `KeysScreen.kt`, `VoiceChooser.kt` | screens |
 
-**English only.** There is no language selector, because there is nothing to select between. If
-Croatian is ever added it is a new decision and a new control, not a hidden setting.
+## BUILDING
 
-1. **Transcribe.** AssemblyAI, the code path in `TTT_MINI`. Short phrases take the synchronous route
-   rather than the polling one; thirty short samples through the slow path is thirty round trips.
-   After it finishes every title becomes the first word of its text.
-2. **Voice selection, one page per engine, swipe between them.** Edge, Hume, Speechify. **Only
-   engines with usable keys get a page**, so the page count follows what is actually available.
-3. **Every voice is previewable before it is chosen.** A list of names is not a choice.
-4. **Generate Voices.** Calls the chosen engine for every transcribed sample.
+`appVersion` in `gradle.properties` is one whole number. `versionCode`, `versionName`, the filename
+and the tag are all derived from it. Bump it, push, and CI builds, gates and releases. Only the two
+newest releases are kept. Every action is pinned by commit SHA. The signing key is a repository
+secret and is permanent, so every build installs over the last one.
 
-**Generate does the samples that are ready and reports the count it skipped.** Refusing thirty
-because one is untranscribed is the app making a decision that belongs to the person.
+    python3 scripts/verify.py     144 structural checks
+    Test 1                        194 cases, plain JVM, no Android
 
-**Generating never overwrites `original.wav`.** After generating, a line plays the generated voice,
-and one control puts every line back to the original.
+## WHAT HAS NEVER BEEN PROVEN
 
-## The engines
+Nothing in this app has been tested by anyone but Baba on his own phone. There is no instrumented
+test, no emulator run, and no second device. In particular:
 
-| Engine | Key | Voices | Note |
-|---|---|---|---|
-| Edge | none | large catalogue | free, no ring, no billing |
-| Hume | **API key + Secret key, a pair** | account voices | 21 accounts held |
-| Speechify | `sk_` ~46 chars | **8 curated simba-3.2** | 21 keys held |
-
-**Speechify is the 8 curated simba-3.2 voices**: beatrice, dominic, edmund, geffen, harper, hugh,
-imogen, wyatt. The full catalogue is a list nobody can choose from, and the shortlist is the set
-`MA_READER_SPEECHIFY` already uses.
-
-**`/v1/voices` pages.** Default 50, maximum 200, `has_more` and `next_cursor`. A single call looks
-like it worked and returns the first fifty alphabetically. MA Reader v27 shipped a list that stopped
-in the A's because of this.
-
-**The model belongs to the voice, never to a global setting.** Each voice reports its own `models[]`.
-Prefer `simba-3.2`, then `simba-english`, then whatever it offers first.
-
-## Keys
-
-Three rings and one router, per `keyring.md` and `provider-router.md`. The canonical `KeyParser` from
-`Key_Tester` ports line for line, because it is Kotlin and so is this.
-
-    the ring walks forward, never backwards into a key it has buried
-    200 good · 401/403 dead, condemn and retry the same request · 429 valid and THROTTLED, rest it,
-      never condemn · 404 usually the wrong path · anything else, stop and report
-    ONE KEY PER JOB, never one key per call. An AssemblyAI upload belongs to the account that made
-      it, and rotating mid-job returns 403 Cannot access uploaded file, which reads as six dead keys
-    the dead list stores SHA-256 fingerprints, never keys
-
-**Hume is a pair and the pair is the unit.** Test with token auth, `POST /oauth2-cc/token`, Basic
-base64(apiKey:secret), `grant_type=client_credentials`. A 200 with an access_token proves both keys
-are valid and matched; testing the API key alone cannot confirm the secret. The token lives about 30
-minutes, which is shorter than a full Generate, so it is re-resolved on expiry and on a later 401.
-
-**Send a User-Agent on every request.** api.hume.ai is behind Cloudflare: with no UA every pair
-returns `403, error code: 1010` at once, measured 21 of 21 both ways. That reads as an entire dead
-account list and is nothing to do with the keys. A 403 carrying 1010 is soft and never condemns.
-
-**Hume pacing.** Roughly 12 seconds between TTS calls. Thirty samples is about six minutes, which is
-why Generate has both a progress line in the app and a status overlay outside it.
-
-**Each key carries the label on the line above it in the imported note**, which is what the canonical
-parser already captures, and that label is what the tester and the importer display. A URL's
-`srsltid` tracking parameter is not an account id, and is not shown.
-
-## Permissions
-
-Microphone, foreground service, accessibility overlay. **Every one of them is offered as a direct
-link to the right settings screen at first run, and again from the settings screen**, so nobody has
-to find an Android page by hand.
-
-## File management
-
-**Settings holds a file manager for samples.** Per project and in total: how many slots are filled,
-how many megabytes they occupy, and a way to delete. Thirty samples times four audio files each adds
-up, and the person who has to live with that must be able to see it and clear it without a cable.
-
-## Re-recording
-
-**A line can be re-recorded after transcription, and doing so clears that line's transcript, its
-title and its generated audio.** Keeping them is the wrong answer and its wrongness does not appear
-until a lot of work has been done: the line would play a generated voice saying the old words.
-
-## Versioning, delivery, and the things not to pay for twice
-
-Version is one whole number in `appVersion` in `gradle.properties`, and `versionCode`, `versionName`,
-the filename `N-sampleplayer-vN.apk` and the tag `vN` are all derived from it. Only the two newest
-releases are kept. Every GitHub Action is pinned by commit SHA.
-
-Five lessons carried over from the stopwatch, each of which cost more than everything else there:
-
-1. **A grep in a pipeline that matches nothing exits 1.** Under `pipefail` that fails a gate because
-   the code is clean. It happened three times.
-2. **Never grep source as prose.** Comments have satisfied checks the code no longer met and failed
-   checks the code passed. Strip comments in one shared place.
-3. **Assert an edit's anchor matched before replacing it.** Three edits reported success and did
-   nothing, and one made a test file look green because the new tests were never there to fail.
-4. **Every check has been wrong at least once**, and nearly all read as PASS while wrong.
-5. **The phone is the authority.** Two thirds of the stopwatch's versions exist because something
-   decided on a build server was wrong on glass.
-
-And one from this app's own sources: **SpeechRecognizer does not work on this phone.** Five versions
-of evidence. It is not reached for here at all.
+- the overlay windows and whether recording survives the app going to the background
+- transcription and both voice engines end to end
+- the gapless loop's join
+- normalisation on real takes
+- the file picker and the save-to-file chooser

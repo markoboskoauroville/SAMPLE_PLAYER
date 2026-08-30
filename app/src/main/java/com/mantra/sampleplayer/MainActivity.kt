@@ -146,6 +146,42 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
+    /**
+     * Speak one short line in one voice and play it, off the main thread.
+     *
+     * Shared by the card's plain preview and its emotion grid so that both go through the same
+     * ring, the same rest-and-retry and the same failure message. Two copies would drift, and the
+     * one used less would be the drifted one.
+     */
+    private fun hearVoice(
+        v: VoiceInfo,
+        line: String,
+        direction: String,
+        onStage: (String) -> Unit,
+    ) {
+        work(onStage) {
+            setStage("hearing ${v.name}…")
+            val bytes = if (v.preview != null && direction.isBlank()) {
+                // Speechify publishes a clip: free, instant, and the same performance every time.
+                Net.bytes(v.preview)
+            } else {
+                Engines.speak(
+                    Voice(v.engine, v.id, v.name, v.model),
+                    line,
+                    keys.ring(v.engine),
+                    direction,
+                ).first
+            }
+            if (bytes == null) {
+                setStage("could not hear ${v.name}")
+            } else {
+                val f = File(cacheDir, "preview.audio")
+                f.writeBytes(bytes)
+                runOnUiThread { onStage("") ; playFile(f) }
+            }
+        }
+    }
+
     private fun playFile(f: File) {
         player?.release()
         player = MediaPlayer().apply {
@@ -168,6 +204,7 @@ class MainActivity : ComponentActivity() {
         var chooserFor by remember { mutableStateOf<Int?>(null) }
         var catalogue by remember { mutableStateOf(emptyList<VoiceInfo>()) }
         var direction by remember { mutableStateOf("") }
+        var cardFor by remember { mutableStateOf<VoiceInfo?>(null) }
         var project by remember { mutableStateOf(load(DEFAULT_PROJECT, slotCount)) }
 
         // THE MODE IS NOW A CONTROL, NOT A SIDE EFFECT.
@@ -242,73 +279,73 @@ class MainActivity : ComponentActivity() {
         }
 
         val choosing = chooserFor
-        if (choosing != null) {
-            VoiceChooser(
-                engine = engine ?: Engines.SPEECHIFY,
-                voices = catalogue,
-                loading = stage,
-                starred = starred,
+        val card = cardFor
+        if (card != null && choosing != null) {
+            VoiceCard(
+                voice = card,
+                starred = VoiceSearch.key(card) in starred,
                 direction = direction,
-                onSearchChanged = { },
-                onStar = { v ->
-                    val k = VoiceSearch.key(v)
+                playing = stage,
+                onStar = {
+                    val k = VoiceSearch.key(card)
                     starred = if (k in starred) starred - k else starred + k
                     prefs.starredVoices = starred
                 },
-                onPreview = { v ->
-                    work({ stage = it }) {
-                        setStage("hearing ${v.name}…")
-                        // THE VOICE SAYS ITS OWN NAME. It used to speak the cell's transcript,
-                        // which made auditioning ten voices for a long line ten long waits and ten
-                        // times the credit. Two seconds is enough to judge a voice.
-                        val bytes = if (v.preview != null) {
-                            Net.bytes(v.preview)
-                        } else {
-                            Engines.speak(
-                                Voice(v.engine, v.id, v.name, v.model),
-                                "This is ${v.name}.",
-                                keys.ring(v.engine),
-                                direction,
-                            ).first
-                        }
-                        if (bytes == null) {
-                            setStage("could not hear ${v.name}")
-                        } else {
-                            val f = File(cacheDir, "preview.audio")
-                            f.writeBytes(bytes)
-                            runOnUiThread { stage = "" ; playFile(f) }
-                        }
-                    }
+                onPreviewPlain = { hearVoice(card, "This is ${card.name}.", direction) { stage = it } },
+                onPreviewDirection = { d ->
+                    // THE PREVIEW SAYS THE NAME AND THE EMOTION, nothing longer. Eight emotions is
+                    // eight calls and Hume paces at about twelve seconds, so a full sentence would
+                    // be two minutes of waiting to hear four seconds of difference.
+                    hearVoice(card, Emotions.previewLine(card.name, d), d.text) { stage = it }
                 },
                 onDirection = { direction = it },
-                onUse = { v ->
+                onUse = {
                     work({ stage = it }) {
                         val words = project.slot(choosing).words
                         if (words.isBlank()) {
                             setStage("transcribe this cell first")
                             return@work
                         }
-                        setStage("generating ${v.name}…")
+                        setStage("generating ${card.name}…")
                         val (bytes, why) = Engines.speak(
-                            Voice(v.engine, v.id, v.name, v.model),
+                            Voice(card.engine, card.id, card.name, card.model),
                             words,
-                            keys.ring(v.engine),
+                            keys.ring(card.engine),
                             direction,
                         )
                         if (bytes == null) {
                             setStage(why)
                             return@work
                         }
-                        val out = Paths.generated(filesDir, project.id, choosing, v.engine)
+                        val out = Paths.generated(filesDir, project.id, choosing, card.engine)
                         out.parentFile?.mkdirs()
                         out.writeBytes(bytes)
-                        Words(this@MainActivity).setVoice(project.id, choosing, v.engine)
+                        Words(this@MainActivity).setVoice(project.id, choosing, card.engine)
                         runOnUiThread {
                             project = load(project.id, slotCountNow())
-                            stage = "${v.name} saved. Your recording is untouched."
+                            stage = "${card.name} saved. Your recording is untouched."
+                            cardFor = null
                             chooserFor = null
                         }
                     }
+                },
+                onClose = { cardFor = null },
+            )
+            return
+        }
+
+        if (choosing != null) {
+            VoiceChooser(
+                engine = engine ?: Engines.SPEECHIFY,
+                voices = catalogue,
+                loading = stage,
+                starred = starred,
+                onSearchChanged = { },
+                onOpen = { cardFor = it },
+                onStar = { v ->
+                    val k = VoiceSearch.key(v)
+                    starred = if (k in starred) starred - k else starred + k
+                    prefs.starredVoices = starred
                 },
                 onClose = { chooserFor = null },
             )
