@@ -56,27 +56,38 @@ fun WaveEditor(
     playhead: Float?,
     onTrim: (Trim) -> Unit,
     onPreview: () -> Unit,
-    onReset: () -> Unit,
     onBack: () -> Unit,
 ) {
     val length = slot.lengthMs
     var width by remember { mutableStateOf(1f) }
     var draggingIn by remember { mutableStateOf(true) }
 
+    // THE VISIBLE WINDOW, WHICH IS THE WHOLE TAKE UNTIL IT IS NOT.
+    //
+    // "Whole take" was a button that put both points back to the ends, and it was the wrong thing
+    // to spend half a row on: it is one drag to undo by hand and it is not what you want in the
+    // middle of trimming. Zoom is. Half a second of breath at the front of a four second take is
+    // thirty pixels wide, and thirty pixels is not something a finger can place.
+    //
+    // THE WINDOW IS FROZEN WHEN ZOOM IS PRESSED, not recomputed from the points as they move.
+    // Deriving it live would be circular — dragging the in point would move the window, which
+    // would move where the in point appears, which would move it again under the finger.
+    var window by remember(slot.index) { mutableStateOf<Pair<Int, Int>?>(null) }
+
+    val winFrom = window?.first ?: 0
+    val winTo = window?.second ?: length.coerceAtLeast(1)
+    val winSpan = (winTo - winFrom).coerceAtLeast(1)
+
     // THE IN AND OUT POINTS WERE UNDOING EACH OTHER, AND IT IS THE SAME BUG AS v3's SECOND TAP.
     //
     // `pointerInput` restarts its block only when its key changes, and this one is keyed on the
-    // length of the recording — which never changes while the editor is open. So the drag handler
-    // was built once and captured `trim` AS IT WAS THEN, for ever. Move the in point: the handler
-    // still holds the trim with in at zero. Move the out point next: it computes
-    // `withOut(thatOldTrim, …)` and hands back a whole new pair with the in point back at zero.
-    // Each drag threw away the other one, exactly as described.
-    //
-    // The state was right the entire time. The gesture was reading a photograph of it.
+    // length of the recording, which never changes while the editor is open. So the drag handler
+    // was built once and captured `trim` AS IT WAS THEN, for ever. Each drag was computed from
+    // that photograph and handed back a whole new pair, throwing the other point away.
     val live by rememberUpdatedState(trim)
     val change by rememberUpdatedState(onTrim)
-
-    // Wide enough to see and to put a finger near. Three pixels was neither.
+    val from by rememberUpdatedState(winFrom)
+    val span by rememberUpdatedState(winSpan)
 
     Column(
         Modifier
@@ -96,8 +107,6 @@ fun WaveEditor(
             )
         }
 
-        // THE WAVEFORM, FULL WIDTH AND TALL. This is the one screen where the recording is the
-        // subject rather than a thumbnail, so it gets the height the grid could not give it.
         Box(
             Modifier
                 .fillMaxWidth()
@@ -106,18 +115,15 @@ fun WaveEditor(
                 .pointerInput(length) {
                     detectHorizontalDragGestures(
                         // THE SIDE YOU START FROM PICKS THE HANDLE, AND IT HOLDS FOR THE WHOLE
-                        // DRAG.
-                        //
-                        // v7 chose whichever handle was nearer to the finger, which sounded
-                        // helpful and is not: once the two points are close together the same
-                        // gesture grabs a different end depending on a few pixels, and once you
-                        // have dragged one point past the middle it starts answering to the wrong
-                        // side of the screen. Left half is the start, right half is the stop, and
-                        // it does not change under your finger halfway through.
+                        // DRAG. Choosing whichever handle is nearer sounds helpful and is not:
+                        // once the two points are close the same gesture grabs a different end
+                        // depending on a few pixels.
                         onDragStart = { start -> draggingIn = start.x < width / 2f },
                     ) { it, _ ->
                         if (length <= 0 || width <= 1f) return@detectHorizontalDragGestures
-                        val ms = ((it.position.x / width) * length).toInt()
+                        // Position is read through the window, so a drag means the same thing
+                        // zoomed in as zoomed out: where the finger is on the visible waveform.
+                        val ms = from + ((it.position.x / width) * span).toInt()
                         change(
                             if (draggingIn) {
                                 Trim.withIn(live, ms, length)
@@ -130,13 +136,23 @@ fun WaveEditor(
                 .drawBehind {
                     width = size.width
                     val end = trim.endOf(length)
-                    val inX = if (length > 0) size.width * trim.inMs / length else 0f
-                    val outX = if (length > 0) size.width * end / length else size.width
 
-                    if (waveform.isNotEmpty()) {
-                        val w = size.width / waveform.size
-                        for (i in waveform.indices) {
-                            val h = (waveform[i] * size.height * 0.9f).coerceAtLeast(1f)
+                    fun xOf(ms: Int): Float =
+                        ((ms - winFrom).toFloat() / winSpan) * size.width
+
+                    val inX = xOf(trim.inMs)
+                    val outX = xOf(end)
+
+                    if (waveform.isNotEmpty() && length > 0) {
+                        // Only the buckets inside the window, stretched across the full width.
+                        val firstB = (waveform.size.toLong() * winFrom / length).toInt()
+                            .coerceIn(0, waveform.size - 1)
+                        val lastB = (waveform.size.toLong() * winTo / length).toInt()
+                            .coerceIn(firstB + 1, waveform.size)
+                        val shown = lastB - firstB
+                        val w = size.width / shown
+                        for (i in 0 until shown) {
+                            val h = (waveform[firstB + i] * size.height * 0.9f).coerceAtLeast(1f)
                             val x = i * w
                             // Outside the points is dimmed rather than hidden. It is still part of
                             // the recording and it is still there to drag back to.
@@ -148,29 +164,30 @@ fun WaveEditor(
                             )
                         }
                     }
-                    // TWO HAIRLINES, TWO COLOURS. YELLOW IN, RED OUT.
+
+                    // TWO HAIRLINES, TWO COLOURS. YELLOW IN, RED OUT. Both were amber and three
+                    // pixels wide, so with the out point at its default the red line sat under the
+                    // border at the right edge and could not be seen at all.
+                    val hw = HANDLE_PX
+                    val inAt = inX.coerceIn(0f, size.width - hw)
+                    val outAt = (outX - hw).coerceIn(0f, size.width - hw)
+                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(hw, size.height))
+                    drawRect(RECORDING_RED, Offset(outAt, 0f), Size(hw, size.height))
+                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(hw * 3, hw * 3))
+                    drawRect(RECORDING_RED, Offset(outAt - hw * 2, 0f), Size(hw * 3, hw * 3))
+
+                    // THE PLAYHEAD RUNS BETWEEN THE POINTS, NOT ACROSS THE BOX.
                     //
-                    // Both were amber and both were three pixels wide, which meant that with the
-                    // out point at its default — the end of the recording — the red line sat under
-                    // the one-pixel border at the right edge and could not be seen at all. It was
-                    // there and it was doing its job; there was simply nothing on screen saying
-                    // so, which is indistinguishable from a missing feature.
-                    //
-                    // So: different colours, wider, and both PULLED INSIDE the box so neither can
-                    // hide under an edge.
-                    val w = HANDLE_PX
-                    val inAt = inX.coerceIn(0f, size.width - w)
-                    val outAt = (outX - w).coerceIn(0f, size.width - w)
-                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(w, size.height))
-                    drawRect(RECORDING_RED, Offset(outAt, 0f), Size(w, size.height))
-                    // A cap at the top of each, so the two ends are tellable apart at a glance
-                    // even when the waveform behind them is busy.
-                    drawRect(PLAY_AMBER, Offset(inAt, 0f), Size(w * 3, w * 3))
-                    drawRect(RECORDING_RED, Offset(outAt - w * 2, 0f), Size(w * 3, w * 3))
+                    // The player sounds the region and reports a fraction OF THE REGION, and this
+                    // drew that fraction across the whole width — so the mark started at the left
+                    // edge while the audio started at the in point, and reached the right edge
+                    // while the audio was still short of the out point. The picture disagreed with
+                    // the sound in the one place built for looking at them together.
                     if (playhead != null) {
+                        val at = inX + playhead.coerceIn(0f, 1f) * (outX - inX)
                         drawRect(
                             Color(0xFFFDE68A),
-                            Offset(playhead.coerceIn(0f, 1f) * size.width, 0f),
+                            Offset(at.coerceIn(0f, size.width - 2f), 0f),
                             Size(2f, size.height),
                         )
                     }
@@ -208,8 +225,24 @@ fun WaveEditor(
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button("Play", Modifier.weight(1f), solid = true, accent = PLAY_AMBER) { onPreview() }
-            Button("Whole take", Modifier.weight(1f)) { onReset() }
+            Button(
+                label = if (window == null) "Zoom to in / out" else "Zoom out",
+                modifier = Modifier.weight(1f),
+                solid = window != null,
+                accent = PLAY_AMBER,
+            ) {
+                window = if (window != null) {
+                    null
+                } else {
+                    // A MARGIN EACH SIDE, or the two handles land exactly on the edges of the box
+                    // and there is nowhere left to drag them outwards from.
+                    val end = trim.endOf(length)
+                    val margin = ((end - trim.inMs) / 8).coerceAtLeast(50)
+                    (trim.inMs - margin).coerceAtLeast(0) to (end + margin).coerceAtMost(length)
+                }
+            }
         }
+
         // ── THE HELP, DOWN HERE ──────────────────────────────────────────────────────────────
         Spacer(Modifier.height(28.dp))
         Text(
@@ -232,9 +265,12 @@ fun WaveEditor(
                 "start again to hear the change.",
         )
         Help(
-            "Whole take",
-            "Puts both points back to the ends. Nothing is ever cut: these are two numbers stored " +
-                "beside the recording, the audio is untouched, and this is available for ever.",
+            "Zoom to in / out",
+            "Shows only the part between the points, with a little either side so the handles can " +
+                "still be dragged outwards. Half a second of breath at the front of a four second " +
+                "take is thirty pixels wide, which is not something a finger can place. Press it " +
+                "again to see the whole recording. Nothing is ever cut either way: the points are " +
+                "two numbers stored beside the recording and the audio is untouched.",
         )
     }
 }

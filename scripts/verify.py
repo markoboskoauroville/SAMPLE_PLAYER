@@ -601,10 +601,23 @@ check(
     "Player.fraction()" in ui_code,
     "a fraction of the whole file would put the mark on a slice of the middle",
 )
+# ZOOM REPLACED "WHOLE TAKE". Putting both points back to the ends is one drag to do by hand and
+# is not what you want mid-trim; half a second of breath on a four second take is thirty pixels,
+# which is not something a finger can place.
 check(
-    "there is a way back to the whole take",
-    "Trim.NONE" in ui_code and "Whole take" in editor_code,
-    "the points go back to the ends whenever he wants",
+    "the editor can zoom to the region",
+    "Zoom to in / out" in editor_code and "Zoom out" in editor_code,
+    "one press in, one press back out",
+)
+check(
+    "the zoom window is frozen rather than derived from the points",
+    "var window by remember" in editor_code,
+    "deriving it live is circular: dragging the in point would move the window under the finger",
+)
+check(
+    "the zoom leaves a margin",
+    "margin" in editor_code,
+    "otherwise the handles land on the edges with nowhere to drag outwards from",
 )
 
 # ── KEYS COME FROM A FILE ────────────────────────────────────────
@@ -797,8 +810,18 @@ check(
 )
 check(
     "neither handle can hide under an edge",
-    "coerceIn(0f, size.width - w)" in editor_code,
+    "coerceIn(0f, size.width - hw)" in editor_code,
     "both are pulled inside the box",
+)
+check(
+    "the playhead runs between the points, not across the box",
+    "inX + playhead.coerceIn(0f, 1f) * (outX - inX)" in editor_code,
+    "the player reports a fraction OF THE REGION; drawn across the width it disagreed with the sound",
+)
+check(
+    "a drag is read through the window",
+    "from + ((it.position.x / width) * span)" in editor_code,
+    "so a drag means the same thing zoomed in as zoomed out",
 )
 check(
     "the colours are named on the screen",
@@ -1114,7 +1137,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 210, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 215, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -1126,7 +1149,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 168:
+if len(checks_run) < 174:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

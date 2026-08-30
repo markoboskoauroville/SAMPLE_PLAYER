@@ -61,22 +61,20 @@ object Recorder {
     private val vu = Vu()
 
     /**
-     * THE BEST RATE THIS PHONE WILL GIVE, MONO.
+     * 44.1 kHz FIRST, and it is the format this app records in unless the phone refuses it.
      *
-     * Sixteen kilohertz was inherited from the stopwatch, where the microphone existed to
-     * recognise the word "start" and nothing was ever listened to. Here the recordings are the
-     * work: they are transcribed, they are re-voiced, they are looped, and one day they are in a
-     * film. Sixteen kilohertz throws away everything above 8 kHz, which is most of what makes a
-     * consonant sound like that consonant.
+     * WAV, 44.1 kHz, mono, 16-bit. Not 48: 44.1 is what the material this ends up in is cut at,
+     * and a file that matches the timeline is one resample fewer between the microphone and the
+     * finished thing. 48 is kept as the fallback because a phone that will not open 44.1 will
+     * usually open 48, and 16 below that because an early take is better than none.
      *
      * MONO ON PURPOSE, not as a compromise. One voice, one phone microphone, and a stereo file
      * would be two copies of the same signal at twice the size.
      *
-     * PROBED, NOT ASSUMED. `getMinBufferSize` returns an error for a rate the device will not
-     * take, and a phone that quietly refuses 48 kHz would otherwise produce a recorder that
-     * initialises and records nothing.
+     * PROBED, NOT ASSUMED. getMinBufferSize returns an error for a rate the device will not take,
+     * and a recorder that initialises on a refused rate records silence.
      */
-    val RATES = intArrayOf(48_000, 44_100, 16_000)
+    val RATES = intArrayOf(44_100, 48_000, 16_000)
 
     @Volatile private var probed = 0
 

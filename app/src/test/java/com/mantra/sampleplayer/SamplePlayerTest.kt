@@ -220,19 +220,72 @@ class SamplePlayerTest {
         assertEquals(Paths.original(root, "p", 1), Paths.playing(root, "p", 1, null))
     }
 
-    // ── THE RECORDING RATE ──────────────────────────────────────────
+    // ── THE ZOOM WINDOW AND THE PLAYHEAD ───────────────────────────────
 
-    @Test fun `the best rate is asked for first and sixteen is the floor`() {
-        // Sixteen kilohertz was inherited from a stopwatch that used the microphone to hear the
-        // word start. Here the recordings are the work.
-        assertEquals(48_000, Recorder.RATES.first())
-        assertEquals(16_000, Recorder.RATES.last())
-        assertTrue(Recorder.RATES.contains(44_100))
+    // The arithmetic the editor does when Zoom is pressed, walked here because the drawing itself
+    // cannot be tested without a screen.
+    private fun zoomWindow(trim: Trim, lengthMs: Int): Pair<Int, Int> {
+        val end = trim.endOf(lengthMs)
+        val margin = ((end - trim.inMs) / 8).coerceAtLeast(50)
+        return (trim.inMs - margin).coerceAtLeast(0) to (end + margin).coerceAtMost(lengthMs)
     }
 
-    @Test fun `the rates are offered in descending quality`() {
-        val r = Recorder.RATES.toList()
-        assertEquals(r.sortedDescending(), r)
+    @Test fun `the zoom window contains the whole region`() {
+        val t = Trim(1_000, 3_000)
+        val (from, to) = zoomWindow(t, 4_000)
+        assertTrue(from <= t.inMs)
+        assertTrue(to >= t.endOf(4_000))
+    }
+
+    @Test fun `the zoom window leaves room to drag outwards`() {
+        // Without a margin both handles land exactly on the edges of the box and there is nowhere
+        // left to pull them from.
+        val (from, to) = zoomWindow(Trim(1_000, 3_000), 4_000)
+        assertTrue(from < 1_000)
+        assertTrue(to > 3_000)
+    }
+
+    @Test fun `the zoom window never leaves the recording`() {
+        for (t in listOf(Trim.NONE, Trim(0, 100), Trim(3_900, 4_000), Trim(0, 4_000))) {
+            val (from, to) = zoomWindow(t, 4_000)
+            assertTrue("$t gave $from", from >= 0)
+            assertTrue("$t gave $to", to <= 4_000)
+            assertTrue("$t is empty", from < to)
+        }
+    }
+
+    @Test fun `a very short region still gets a usable window`() {
+        val (from, to) = zoomWindow(Trim(2_000, 2_120), 4_000)
+        assertTrue("window was ${to - from}ms", to - from >= 120)
+    }
+
+    // Where the playhead is drawn. It reports a fraction OF THE REGION, and drawing that across
+    // the whole box put the mark at the left edge while the audio started at the in point.
+    private fun headX(fraction: Float, inX: Float, outX: Float) = inX + fraction * (outX - inX)
+
+    @Test fun `the playhead starts at the in point and ends at the out point`() {
+        assertEquals(200f, headX(0f, 200f, 800f), 0.01f)
+        assertEquals(800f, headX(1f, 200f, 800f), 0.01f)
+        assertEquals(500f, headX(0.5f, 200f, 800f), 0.01f)
+    }
+
+    @Test fun `an untrimmed cell still sweeps the whole box`() {
+        assertEquals(0f, headX(0f, 0f, 1000f), 0.01f)
+        assertEquals(1000f, headX(1f, 0f, 1000f), 0.01f)
+    }
+
+    // ── THE RECORDING RATE ──────────────────────────────────────────
+
+    @Test fun `the default recording format is 44 point 1 kilohertz`() {
+        // WAV, 44.1 kHz, mono, 16-bit. Not 48: 44.1 is what the material this ends up in is cut
+        // at, and a file that matches the timeline is one resample fewer between the microphone
+        // and the finished thing.
+        assertEquals(44_100, Recorder.RATES.first())
+    }
+
+    @Test fun `48 is the fallback and 16 is the floor`() {
+        assertEquals(48_000, Recorder.RATES[1])
+        assertEquals(16_000, Recorder.RATES.last())
     }
 
     @Test fun `a length is computed from the file's own rate, not from a constant`() {

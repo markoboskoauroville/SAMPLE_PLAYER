@@ -379,10 +379,6 @@ class MainActivity : ComponentActivity() {
                     Words(this).setTrim(project.id, editing, it)
                 },
                 onPreview = { startPlaying(editing, project, PlayMode.SINGLE) { playing = it } },
-                onReset = {
-                    t = Trim.NONE
-                    Words(this).setTrim(project.id, editing, Trim.NONE)
-                },
                 onBack = {
                     // THE NEW POINTS TAKE EFFECT IMMEDIATELY, WITHOUT STOPPING.
                     //
