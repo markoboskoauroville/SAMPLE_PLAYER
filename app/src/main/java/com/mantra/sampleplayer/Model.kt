@@ -312,7 +312,14 @@ object Gesture {
         // RECORDING IS STILL REFUSED, because a menu that covers the screen while the microphone
         // is open is a recording nobody can stop.
         mode == Mode.RECORDING -> Press.Refused("stop recording first")
-        project.slot(slot).isEmpty -> Press.Refused("nothing in that cell yet")
+
+        // AN EMPTY CELL OPENS TOO. It used to refuse, on the reasoning that there was nothing
+        // there to act on — which was true while the page could only edit a recording. The page
+        // now holds the line as well, and a line has to be able to arrive in a cell that has
+        // nothing in it yet: typing one is how a cell becomes a cell without a microphone.
+        //
+        // Refusing also made the emptiest cell the only one with no way in, which is the opposite
+        // of what somebody reaching for it wants.
         else -> Press.Clear(slot)
     }
 }

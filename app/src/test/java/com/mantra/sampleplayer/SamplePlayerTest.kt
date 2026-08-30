@@ -106,9 +106,25 @@ class SamplePlayerTest {
         assertTrue(Gesture.longPress(Mode.RECORDING, filled(2), 2) is Press.Refused)
     }
 
-    @Test fun `long press on an empty cell has nothing to open`() {
-        assertTrue(Gesture.longPress(Mode.STOPPED, filled(), 2) is Press.Refused)
-        assertTrue(Gesture.longPress(Mode.PLAYING, filled(), 2) is Press.Refused)
+    @Test fun `long press opens an empty cell too`() {
+        // It used to refuse, on the reasoning that there was nothing there to act on — true while
+        // the page could only edit a recording. The page holds the LINE now, and a line has to be
+        // able to arrive in a cell that has nothing in it: typing one is how a cell becomes a
+        // cell without a microphone. Refusing also made the emptiest cell the only one with no
+        // way in, which is the opposite of what somebody reaching for it wants.
+        assertEquals(Press.Clear(2), Gesture.longPress(Mode.STOPPED, filled(), 2))
+        assertEquals(Press.Clear(2), Gesture.longPress(Mode.PLAYING, filled(), 2))
+    }
+
+    @Test fun `a cell that does not exist still cannot be opened`() {
+        assertTrue(Gesture.longPress(Mode.STOPPED, filled(), 999) is Press.Refused)
+        assertTrue(Gesture.longPress(Mode.STOPPED, filled(), -1) is Press.Refused)
+    }
+
+    @Test fun `recording is still the one mode that refuses`() {
+        // A menu covering the screen while the microphone is open is a recording nobody can stop.
+        assertTrue(Gesture.longPress(Mode.RECORDING, filled(), 2) is Press.Refused)
+        assertTrue(Gesture.longPress(Mode.RECORDING, filled(2), 2) is Press.Refused)
     }
 
     // ── LOOP IS A FLAG ON THE CELL ────────────────────────────────────

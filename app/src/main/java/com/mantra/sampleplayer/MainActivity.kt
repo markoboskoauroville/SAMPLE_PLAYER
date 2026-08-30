@@ -614,6 +614,22 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 },
+                onWords = { text ->
+                    // Cleaned through the same function as a text file, so a typed line and an
+                    // opened one arrive at an engine in the same shape.
+                    val words = Text.forSpeaking(text)
+                    Words(this@MainActivity).put(project.id, openSlot, words)
+                    project = load(project.id, slotCountNow())
+                    stage = if (words.isBlank()) "the line is empty" else Text.report(text)
+                },
+                onPerform = {
+                    val voice = project.slot(openSlot).voice
+                    if (voice == null) {
+                        stage = "pick Speechify or Hume to perform it"
+                    } else {
+                        speakCurrentText(openSlot, voice) { stage = it }
+                    }
+                },
                 onReadText = {
                     onTextFile = { raw ->
                         val words = Text.forSpeaking(raw)

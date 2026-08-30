@@ -1,6 +1,7 @@
 package com.mantra.sampleplayer
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,11 +12,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +62,8 @@ fun SlotOptions(
     onLoop: () -> Unit,
     onTranscribe: () -> Unit,
     onReadText: () -> Unit,
+    onWords: (String) -> Unit,
+    onPerform: () -> Unit,
     onEngine: (String) -> Unit,
     onRevert: () -> Unit,
     onBack: () -> Unit,
@@ -68,15 +78,54 @@ fun SlotOptions(
     ) {
         ScreenHeader("Cell %02d".format(slot.index + 1), onBack)
 
-        if (slot.words.isNotBlank()) {
-            Text(
-                slot.words,
-                color = Color(0xFF94A3B8),
+        // THE LINE IS EDITABLE, NOT DISPLAYED.
+        //
+        // It was a grey line of read-only text, which meant a transcript that came back with one
+        // word wrong could only be fixed by recording the take again — and a line could only
+        // arrive by being spoken or by being found in a file. There was no way to simply write
+        // one.
+        //
+        // A KEYBOARD ON A PHONE IS STILL A KEYBOARD, and this app avoids them everywhere else for
+        // good reason. This one earns its place: it is the only way to correct a word without
+        // re-recording, and it is never in the way — nothing has to be typed for the rest of the
+        // page to work.
+        var line by remember(slot.index, slot.words) { mutableStateOf(slot.words) }
+        BasicTextField(
+            value = line,
+            onValueChange = { line = it },
+            textStyle = TextStyle(
+                color = Color.White,
                 fontSize = 12.sp,
                 fontFamily = FontFamily.Monospace,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
+            ),
+            cursorBrush = SolidColor(PLAY_AMBER),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFF3F3F46))
+                .padding(8.dp),
+            decorationBox = { inner ->
+                if (line.isEmpty()) {
+                    Text(
+                        "type the line here, or transcribe it, or open a file",
+                        color = Color(0xFF52525B),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+                inner()
+            },
+        )
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Button("Save the line", Modifier.weight(1f)) { onWords(line) }
+            Button(
+                label = "Perform it",
+                modifier = Modifier.weight(1f),
+                solid = true,
+                accent = PLAY_AMBER,
+            ) { onWords(line); onPerform() }
         }
+        Spacer(Modifier.height(10.dp))
 
         if (stage.isNotBlank()) {
             Text(
@@ -158,6 +207,17 @@ fun SlotOptions(
                 "the chosen voice speaks them. If this cell has no voice yet you will be asked " +
                 "for one first. It works on an empty cell, so a set can mix lines you recorded " +
                 "with lines you wrote.",
+        )
+        Help(
+            "The line",
+            "Whatever is in the box is this cell's line. Type it, transcribe the recording into " +
+                "it, or open a file into it \u2014 then correct it by hand if a word came back " +
+                "wrong. It is the only way to fix one word without recording the take again.",
+        )
+        Help(
+            "Perform it",
+            "Saves the line and speaks it in this cell's voice, beside your recording rather " +
+                "than over it. If no voice has been chosen yet, pick Speechify or Hume first.",
         )
         Help("Transcribe", "The words become the title of the cell, exactly as spoken. It also happens on its own on the way to a voice, so you are never asked to do it twice.")
         Help("Speechify / Hume", "Opens the voice chooser for that engine. " + if (voiceCount > 0) "$voiceCount voices loaded." else "An engine with no key is not offered; import keys in settings.")

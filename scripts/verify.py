@@ -965,8 +965,18 @@ check(
 check(
     "only recording refuses a long press",
     "mode == Mode.RECORDING -> Press.Refused" in model_code
-    and "mode != Mode.STOPPED" not in model_code,
-    "a menu is safe to open while a set is playing; it is not safe while the microphone is open",
+    and "nothing in that cell yet" not in model_code,
+    "an empty cell opens too, because the page holds the line as well as the recording",
+)
+check(
+    "the line on the cell page is editable",
+    "BasicTextField" in options_code and "onWords" in options_code,
+    "a transcript with one wrong word used to mean recording the take again",
+)
+check(
+    "a typed line is cleaned the same way as an opened file",
+    "Text.forSpeaking(text)" in ui_code,
+    "both arrive at an engine in the same shape",
 )
 
 # ── THE CONTROLS TAKE A CORNER ────────────────────────────────────
