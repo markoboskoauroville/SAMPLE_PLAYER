@@ -574,10 +574,32 @@ check(
     and "coerceIn" in model_code,
     "a rule enforced at one edge is a rule with a way round it",
 )
+# THE POINTS ARE APPLIED BY CUTTING THE REGION, NOT BY SEEKING.
+#
+# MediaPlayer.seekTo is asynchronous: the seek had not landed when start() returned, so playback
+# began at zero, and while it settled isPlaying reported false, which made the out-point watcher
+# decide playback had finished. One asynchronous call broke both ends of the trim at once, and
+# silently, because a cell playing start to finish is what an untrimmed cell does.
+player_code = code_only(src["Player.kt"])
 check(
-    "playback applies the points",
-    "seekTo(t.inMs)" in ui_code and "stopAt(" in ui_code,
-    "nothing was cut, so skipping this would make the editor a screen that changes nothing",
+    "playback cuts the region rather than seeking into the file",
+    "copyOfRange(from, to)" in player_code and "seekTo" not in player_code,
+    "no seek to be late, no deadline to watch, and boundaries at the sample",
+)
+check(
+    "cell playback goes through the PCM player",
+    "Player.play(" in ui_code and "player = MediaPlayer()" not in ui_code.split("playFile")[0],
+    "MediaPlayer is left only for preview clips, which are mp3 and need a decoder",
+)
+check(
+    "the out-point watcher is gone",
+    "stopAt(" not in ui_code,
+    "AudioTrack in MODE_STATIC stops at the last sample of its own accord",
+)
+check(
+    "the playhead measures the region being heard",
+    "Player.fraction()" in ui_code,
+    "a fraction of the whole file would put the mark on a slice of the middle",
 )
 check(
     "there is a way back to the whole take",
@@ -898,6 +920,11 @@ check(
     "WAVEFORM_SCALES.last()" in ui_code,
     "the cost that made this a setting is thirty cells at once",
 )
+check(
+    "the scale is a multiplier, not an index",
+    "coerceIn(WAVEFORM_SCALES.first(), WAVEFORM_SCALES.last())" in model_code,
+    "a stored 4 meant 4x while the list had four entries and would mean 128x now",
+)
 
 # ── THE CELL CARRIES ITS OWN SENTENCE ───────────────────────────────
 check(
@@ -1087,7 +1114,7 @@ check(
 tests = TEST.read_text()
 cases = len(re.findall(r"@Test", tests))
 print(f"\ntest cases declared: {cases}")
-check("Test 1 is large enough to be a suite", cases >= 200, f"{cases} cases")
+check("Test 1 is large enough to be a suite", cases >= 210, f"{cases} cases")
 for required in [
     "playing an empty slot refuses rather than falling through to recording",
     "no engine name can make a generated path equal the original",
@@ -1099,7 +1126,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 160:
+if len(checks_run) < 168:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

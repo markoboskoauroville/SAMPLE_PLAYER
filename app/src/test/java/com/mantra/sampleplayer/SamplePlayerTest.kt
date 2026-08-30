@@ -364,6 +364,51 @@ class SamplePlayerTest {
         return h
     }
 
+    // ── THE REGION THAT IS ACTUALLY PLAYED ─────────────────────────────
+
+    // The arithmetic Player does before handing a buffer to AudioTrack. Kept here as a pure walk
+    // because the bug it replaces — a seek that had not landed when playback started — could not
+    // be caught by any test at all: it was a race inside a framework call.
+    private fun regionOf(trim: Trim, frames: Int, rate: Int): Pair<Int, Int> {
+        val lengthMs = (frames.toLong() * 1000L / rate).toInt()
+        val from = (trim.inMs.toLong() * rate / 1000L).toInt().coerceIn(0, frames - 1)
+        val to = (trim.endOf(lengthMs).toLong() * rate / 1000L).toInt().coerceIn(from + 1, frames)
+        return from to to
+    }
+
+    @Test fun `an untrimmed cell plays every frame`() {
+        assertEquals(0 to 48_000, regionOf(Trim.NONE, 48_000, 48_000))
+    }
+
+    @Test fun `an in point moves the first frame`() {
+        assertEquals(24_000 to 48_000, regionOf(Trim(inMs = 500), 48_000, 48_000))
+    }
+
+    @Test fun `an out point moves the last frame`() {
+        assertEquals(0 to 24_000, regionOf(Trim(outMs = 500), 48_000, 48_000))
+    }
+
+    @Test fun `both points cut both ends`() {
+        assertEquals(4_800 to 43_200, regionOf(Trim(100, 900), 48_000, 48_000))
+    }
+
+    @Test fun `the region is never empty and never runs past the file`() {
+        for (inMs in listOf(0, 1, 499, 999, 5_000)) {
+            for (outMs in listOf(0, 1, 500, 1_000, 9_999)) {
+                val (from, to) = regionOf(Trim(inMs, outMs), 48_000, 48_000)
+                assertTrue("in=$inMs out=$outMs gave $from..$to", from < to)
+                assertTrue(from >= 0)
+                assertTrue(to <= 48_000)
+            }
+        }
+    }
+
+    @Test fun `the region follows the file's own rate`() {
+        // A 16 kHz take from an early version and a 48 kHz one must both cut at half a second.
+        assertEquals(8_000 to 16_000, regionOf(Trim(inMs = 500), 16_000, 16_000))
+        assertEquals(24_000 to 48_000, regionOf(Trim(inMs = 500), 48_000, 48_000))
+    }
+
     // ── THE PLAYBACK POINTS ─────────────────────────────────────────
 
     @Test fun `an untrimmed cell plays the whole recording`() {
@@ -935,18 +980,30 @@ class SamplePlayerTest {
     // ── WAVEFORM DETAIL ─────────────────────────────────────────────
 
     @Test fun `each step of detail is a whole multiple of the base`() {
-        assertEquals(32, waveformBuckets(1))
         assertEquals(64, waveformBuckets(2))
-        assertEquals(96, waveformBuckets(3))
         assertEquals(128, waveformBuckets(4))
+        assertEquals(256, waveformBuckets(8))
+        assertEquals(512, waveformBuckets(16))
+    }
+
+    @Test fun `the scale is the multiplier itself, not a position in the list`() {
+        // It used to be an index clamped to the list's LENGTH, so a stored 4 meant 4x while there
+        // were four entries. With multipliers in the list that same 4 would have meant 128x.
+        for (n in WAVEFORM_SCALES) assertEquals(32 * n, waveformBuckets(n))
     }
 
     @Test fun `a stored scale outside the range cannot ask for absurd work`() {
-        // A hundred and twenty cells at nine times the base would be a page that takes a second
-        // to open, from a preference nobody set on purpose.
-        assertEquals(waveformBuckets(1), waveformBuckets(0))
-        assertEquals(waveformBuckets(1), waveformBuckets(-5))
-        assertEquals(waveformBuckets(4), waveformBuckets(99))
+        // A hundred and twenty cells at 128 times the base would be a page that takes a second to
+        // open, from a preference nobody set on purpose.
+        assertEquals(waveformBuckets(2), waveformBuckets(0))
+        assertEquals(waveformBuckets(2), waveformBuckets(-5))
+        assertEquals(waveformBuckets(16), waveformBuckets(999))
+    }
+
+    @Test fun `the offered scales are the ones the app clamps to`() {
+        assertEquals(2, WAVEFORM_SCALES.first())
+        assertEquals(16, WAVEFORM_SCALES.last())
+        assertEquals(WAVEFORM_SCALES.sorted(), WAVEFORM_SCALES)
     }
 
     @Test fun `the waveform really returns the number of slices asked for`() {

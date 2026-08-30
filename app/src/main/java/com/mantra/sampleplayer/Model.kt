@@ -620,11 +620,23 @@ const val SLOTS_ON_SCREEN = 30
  * phone the base is comfortable and four times it is visibly slower to open a page, which is why
  * it is a setting rather than a decision made here.
  */
-val WAVEFORM_SCALES = listOf(1, 2, 3, 4)
+val WAVEFORM_SCALES = listOf(2, 4, 8, 16)
 
 const val WAVEFORM_BASE = 32
 
-fun waveformBuckets(scale: Int): Int = WAVEFORM_BASE * scale.coerceIn(1, WAVEFORM_SCALES.size)
+/**
+ * The scale is now the MULTIPLIER, not an index into the list.
+ *
+ * 1x to 4x gave 32 to 128 slices, and at three across a cell is about 120 pixels wide — so even
+ * the finest was drawing fewer than two slices per pixel and the wave still read as a comb. The
+ * range is 2, 4, 8, 16 now: 64 slices to 512, which at the top is more detail than the screen can
+ * resolve and is meant to be, because the editor draws one recording across the whole width.
+ *
+ * Clamped to the offered range rather than to the list's length, which is what the old version
+ * did — a stored 4 meant 4x when the list had four entries and would have meant 128x here.
+ */
+fun waveformBuckets(scale: Int): Int =
+    WAVEFORM_BASE * scale.coerceIn(WAVEFORM_SCALES.first(), WAVEFORM_SCALES.last())
 
 /**
  * THE COLOUR OF THE WAVE.

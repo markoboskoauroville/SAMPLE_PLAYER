@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         Looper.stop()
+        Player.stop()
         player?.release()
         player = null
         super.onDestroy()
@@ -182,6 +183,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Play an arbitrary audio file, used only for voice previews.
+     *
+     * STILL `MediaPlayer`, AND DELIBERATELY. A Speechify preview clip comes off their CDN as an
+     * mp3, so it needs a decoder — [Player] takes PCM out of a WAV and would have nothing to do
+     * with it. Nothing about the trim applies here either: a preview is a whole short clip.
+     */
     private fun playFile(f: File) {
         player?.release()
         player = MediaPlayer().apply {
@@ -266,14 +274,12 @@ class MainActivity : ComponentActivity() {
             OverlayService.instance?.showRecording(recordingSlot, level)
         }
 
-        // THE PLAYHEAD. Polled rather than driven by a callback, because MediaPlayer's position is
-        // the only honest source. Sixty milliseconds is fast enough that the mark moves smoothly
-        // across a tile and slow enough that it costs nothing.
+        // THE PLAYHEAD ASKS THE PLAYER WHERE IT IS, and the player counts frames of the region
+        // it is actually sounding. Fraction of the REGION, not of the file, so a trimmed cell's
+        // mark crosses the part being heard rather than a slice of the middle.
         LaunchedEffect(playing) {
-            while (playing != null) {
-                val p = player ?: break
-                val dur = p.duration.coerceAtLeast(1)
-                fraction = (p.currentPosition.toFloat() / dur).coerceIn(0f, 1f)
+            while (playing != null && Player.isPlaying) {
+                fraction = Player.fraction()
                 delay(60)
             }
         }
@@ -388,8 +394,7 @@ class MainActivity : ComponentActivity() {
                     // left alone.
                     val wasPlaying = playing == editing
                     val wasLooping = Looper.slot == editing
-                    player?.let { runCatching { it.stop() }; it.release() }
-                    player = null
+                    Player.stop()
                     playing = null
                     editorFor = null
                     project = load(project.id, slotCountNow())
@@ -728,8 +733,7 @@ class MainActivity : ComponentActivity() {
                                     } else {
                                         // Two things sounding at once is not a feature, and the
                                         // loop is the one that was just asked for.
-                                        player?.let { runCatching { it.stop() }; it.release() }
-                                        player = null
+                                        Player.stop()
                                         playing = null
                                         // LOOPS WHAT THE CELL PLAYS. It could only ever loop
                                         // the original while Speechify returned mp3; both engines
@@ -833,8 +837,7 @@ class MainActivity : ComponentActivity() {
                         recordingSlot = null
                         project = load(project.id, slotCountNow())
                     }
-                    player?.let { runCatching { it.stop() }; it.release() }
-                    player = null
+                    Player.stop()
                     playing = null
                     armed = if (armed == Mode.PLAYING) Mode.STOPPED else Mode.PLAYING
                     message = ""
@@ -846,80 +849,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Play one cell between its points, and move on when it ends.
+     *
+     * THE IN AND OUT POINTS ARE APPLIED BY CUTTING THE REGION, NOT BY SEEKING. See [Player] for
+     * why: `MediaPlayer.seekTo` is asynchronous, so the seek had not landed when playback started
+     * and the file played from zero — and while the seek settled `isPlaying` reported false, which
+     * made the out-point watcher decide playback had finished and stop watching. One asynchronous
+     * call broke both ends of the trim, silently, because a cell playing start to finish is
+     * exactly what an untrimmed cell does.
+     */
     private fun startPlaying(
         slot: Int,
         project: Project,
         mode: PlayMode,
         onSlot: (Int?) -> Unit,
     ) {
-        player?.release()
         val f = Paths.playing(filesDir, project.id, slot, project.slot(slot).voice)
         if (!f.isFile) { onSlot(null); return }
-        // THE IN AND OUT POINTS ARE APPLIED HERE, AND ONLY HERE. Nothing was cut from the file,
-        // so if this is skipped the editor is a screen that changes nothing. The out point is a
-        // watched deadline rather than a seek, because MediaPlayer has no concept of stopping
-        // early: it plays to the end of the file unless something stops it.
-        val t = Words(this).trim(project.id, slot)
-        val lengthMs = project.slot(slot).lengthMs
-        player = MediaPlayer().apply {
-            setDataSource(f.absolutePath)
-            prepare()
-            if (t.inMs > 0) seekTo(t.inMs)
-            setOnCompletionListener {
+        val why = Player.play(f, slot, Words(this).trim(project.id, slot)) {
+            runOnUiThread {
                 val next = nextInPlayback(project, slot, mode)
                 if (next == null) onSlot(null) else startPlaying(next, project, mode, onSlot)
             }
-            start()
+        }
+        if (why.isNotBlank()) {
+            onSlot(null)
+            return
         }
         onSlot(slot)
-        val end = t.endOf(lengthMs)
-        if (t.isSet(lengthMs)) stopAt(slot, end, project, mode, onSlot)
     }
 
-    /**
-     * WATCH FOR THE OUT POINT AND STOP THERE.
-     *
-     * `MediaPlayer` has no concept of stopping early: it plays a file to its end. Since nothing is
-     * ever cut from the recording, the out point has to be enforced by watching the clock — which
-     * is why the editor could exist at all without touching the audio.
-     *
-     * The poll is generous at 40ms. A few tens of milliseconds past the point is inaudible; the
-     * thing that must not happen is running on into the click of the second press, and that is
-     * hundreds of milliseconds wide.
-     */
-    private fun stopAt(
-        slot: Int,
-        endMs: Int,
-        project: Project,
-        mode: PlayMode,
-        onSlot: (Int?) -> Unit,
-    ) {
-        val watched = player ?: return
-        Thread {
-            // A COUNTED LOOP, NOT `while (true)`. G5 refuses the second kind and is right to: a
-            // loop that ends because of a condition in the middle stops ending when somebody edits
-            // the middle. The ceiling is the recording's own length plus a second, so the watcher
-            // cannot outlive the thing it is watching even if every exit below is wrong.
-            val ticks = (endMs / POLL_MS) + 25
-            for (unused in 0..ticks) {
-                Thread.sleep(POLL_MS.toLong())
-                val p = player
-                if (p !== watched) return@Thread
-                val position = runCatching { p.currentPosition }.getOrNull() ?: return@Thread
-                if (!runCatching { p.isPlaying }.getOrDefault(false)) return@Thread
-                if (position < endMs) continue
-                runOnUiThread {
-                    if (player !== watched) return@runOnUiThread
-                    runCatching { watched.stop() }
-                    watched.release()
-                    player = null
-                    val next = nextInPlayback(project, slot, mode)
-                    if (next == null) onSlot(null) else startPlaying(next, project, mode, onSlot)
-                }
-                return@Thread
-            }
-        }.start()
-    }
 
     /**
      * Transcribe one cell and store the words. Returns a reason when it failed, or empty.
@@ -1026,9 +986,6 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
-        /** How often the out point is checked. Tens of milliseconds late is inaudible. */
-        const val POLL_MS = 40
-
         const val DEFAULT_PROJECT = "project-01"
 
         /** Three across, ten down, which puts the whole set on one screen. */

@@ -59,8 +59,11 @@ class Prefs(context: Context) {
 
     /** 1x to 4x. Clamped, because a stored 9 would be a hundred and twenty cells of work. */
     var waveScale: Int
-        get() = sp.getInt(KEY_WAVE, 1).coerceIn(1, WAVEFORM_SCALES.size)
-        set(value) = sp.edit().putInt(KEY_WAVE, value.coerceIn(1, WAVEFORM_SCALES.size)).apply()
+        get() = sp.getInt(KEY_WAVE, WAVEFORM_SCALES.first())
+            .coerceIn(WAVEFORM_SCALES.first(), WAVEFORM_SCALES.last())
+        set(value) = sp.edit()
+            .putInt(KEY_WAVE, value.coerceIn(WAVEFORM_SCALES.first(), WAVEFORM_SCALES.last()))
+            .apply()
 
     /** Which colour the wave is drawn in. */
     var waveColourIndex: Int
