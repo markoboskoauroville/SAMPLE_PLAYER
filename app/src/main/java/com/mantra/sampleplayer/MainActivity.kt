@@ -268,6 +268,8 @@ class MainActivity : ComponentActivity() {
         var waveScale by remember { mutableStateOf(prefs.waveScale) }
         var waveColour by remember { mutableStateOf(prefs.waveColourIndex) }
         var updateState by remember { mutableStateOf("") }
+        var showSpend by remember { mutableStateOf(false) }
+        var spendTick by remember { mutableStateOf(0) }
         var updateUrl by remember { mutableStateOf<String?>(null) }
         var starred by remember { mutableStateOf(prefs.starredVoices) }
         var chooserFor by remember { mutableStateOf<Int?>(null) }
@@ -544,6 +546,22 @@ class MainActivity : ComponentActivity() {
                     keyBusy = "deleted"
                 },
                 onBack = { tab = null },
+                onCredit = { row ->
+                    work({ stage = it }) {
+                        setStage("asking Hume for one word…")
+                        // The ONE account, not the ring: the question is about this row, and a
+                        // ring would walk past it to a different account and answer about that.
+                        val cred = keys.credentialFor(row)
+                        val (_, why) = Engines.humeCredit(
+                            Ring(listOfNotNull(cred)),
+                            Spend(this@MainActivity),
+                        )
+                        runOnUiThread {
+                            spendTick++
+                            stage = why
+                        }
+                    }
+                },
                 onTab = { go(it) },
                 tabSlot = tabSlot,
             )
@@ -701,6 +719,24 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        if (showSpend) {
+            SpendScreen(
+                spend = Spend(this),
+                onRate = { provider, rate ->
+                    Spend(this).setRate(provider, rate)
+                    spendTick++
+                },
+                onClear = {
+                    val n = Spend(this).clear()
+                    spendTick++
+                    stage = "cleared $n logged calls"
+                },
+                tick = spendTick,
+                onBack = { showSpend = false },
+            )
+            return
+        }
+
         if (tab == "settings") {
             // A SCREEN, NOT A SHEET OVER THE GRID. design-language.md: a panel that covers the
             // thing it configures leaves nowhere to look while deciding, and v5 of the stopwatch
@@ -713,6 +749,13 @@ class MainActivity : ComponentActivity() {
                 waveScale = waveScale,
                 waveColour = waveColour,
                 updateState = updateState,
+                spendLines = remember(spendTick, showSpend) {
+                    // Recomputed rather than remembered: the total has never been stored, and
+                    // reading it is a few hundred short lines off local disk.
+                    Spend(this@MainActivity).totals().toSortedMap().map { (p, t) ->
+                        "$p ${t.units} ${t.unit}" + if (t.cost > 0) " · ${t.cost}" else ""
+                    }
+                },
                 updateReady = updateUrl != null,
                 usage = vault.usageOf(project.id),
                 keySummary = keys.summary(),
@@ -726,6 +769,7 @@ class MainActivity : ComponentActivity() {
                     playMode = it
                     prefs.playMode = it
                 },
+                onSpend = { showSpend = true },
                 onCheckUpdates = {
                     updateState = "asking GitHub…"
                     Thread {

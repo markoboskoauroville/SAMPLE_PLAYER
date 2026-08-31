@@ -47,6 +47,7 @@ fun KeysScreen(
     busy: String,
     onImportFile: () -> Unit,
     onTest: (KeyRow) -> Unit,
+    onCredit: (KeyRow) -> Unit,
     onTestAll: () -> Unit,
     onDelete: (KeyRow) -> Unit,
     onBack: () -> Unit,
@@ -140,6 +141,22 @@ fun KeysScreen(
                     Spacer(Modifier.height(4.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Button("Test", Modifier.weight(1f), accent = colour) { onTest(row) }
+                        // ONLY HUME HAS THIS, AND ONLY BECAUSE ONLY HUME CAN ANSWER.
+                        //
+                        // Probed with real keys on 30.8.2026: Hume's /v0/usage, /v0/billing and
+                        // /v0/account are 404; AssemblyAI's /v2/account returns an empty object;
+                        // Speechify has no usage surface at all; Anthropic's usage report needs an
+                        // Admin key, which is a different key from the one in the note. Nothing
+                        // publishes a balance.
+                        //
+                        // What Hume does is REFUSE: a synthesis on an exhausted account answers
+                        // 400 E0300 zero_credits. So this is the cheapest real call there is — one
+                        // word — and the answer is the refusal or the absence of it. It costs a
+                        // word when the account is alive and nothing when it is not, which is the
+                        // direction that matters when the question is which to delete.
+                        if (row.providerId == "hume") {
+                            Button("Credit", Modifier.weight(1f)) { onCredit(row) }
+                        }
                         Button("Delete", Modifier.weight(1f), accent = RECORDING_RED) {
                             onDelete(row)
                         }

@@ -44,7 +44,9 @@ object Transcribe {
         data class Failed(val why: String) : Result
     }
 
-    fun of(wav: File, ring: Ring): Result {
+    fun of(wav: File, ring: Ring,
+        spend: Spend? = null,
+    ): Result {
         val credential = ring.current() ?: return Result.Failed("no AssemblyAI key")
         val auth = mapOf("authorization" to credential.key)
 
@@ -73,6 +75,10 @@ object Transcribe {
             if (!got.ok) return failure(got, credential, ring, "poll")
             when (Net.str(got.body, "status")) {
                 "completed" -> {
+                    // The audio duration AssemblyAI states it read, which is what it bills by.
+                    // Logged here rather than at the upload, because a job that fails halfway is
+                    // not billed and a line for it would be a line that is wrong.
+                    spend?.add("assemblyai", Net.num(got.body, "audio_duration") ?: 0.0, wav.name)
                     val text = Net.str(got.body, "text").orEmpty().trim()
                     return if (text.isEmpty()) Result.Failed("nothing heard") else Result.Text(text)
                 }
@@ -152,11 +158,45 @@ object Engines {
      * returns WAV. Both are now drawable and both are loopable. The file is about six times the
      * size of the mp3, which for a spoken phrase is a few hundred kilobytes.
      */
+    /**
+     * HAS THIS HUME ACCOUNT GOT CREDIT.
+     *
+     * ITS OWN CALL RATHER THAN [speak] WITH A PLACEHOLDER VOICE. Bending speak around this would
+     * mean inventing a voice id for it, and a probe that depends on one particular voice still
+     * existing next year is a probe that will one day report "no credit" when it means "that
+     * voice was retired". Hume accepts an utterance with no voice at all — measured — so the
+     * probe asks for exactly what it needs and nothing else.
+     *
+     * ONE WORD. It costs a word of synthesis when the account is alive and NOTHING when it is
+     * exhausted, which is the direction that matters when the question is which accounts to
+     * delete.
+     */
+    fun humeCredit(ring: Ring, spend: Spend? = null): Pair<Boolean?, String> {
+        val c = ring.current() ?: return null to "no Hume key"
+        val r = Net.postJson(
+            "https://api.hume.ai/v0/tts",
+            mapOf("X-Hume-Api-Key" to c.key),
+            """{"utterances":[{"text":"Hi."}],"format":{"type":"wav"},"num_generations":1}""",
+        )
+        if (r.ok) {
+            spend?.add(HUME, Net.num(r.body, "duration") ?: 0.0, "credit test")
+            return true to "has credit"
+        }
+        val body = r.body.lowercase()
+        if (body.contains("credit") || body.contains("e0300")) {
+            return false to "out of credit — safe to delete"
+        }
+        // Anything else says nothing about the credit, and saying so is the point: a Cloudflare
+        // 403 reads exactly like a dead account and is not one.
+        return null to Providers.explain(r.code, r.body)
+    }
+
     fun speak(
         voice: Voice,
         text: String,
         ring: Ring,
         direction: String = "",
+        spend: Spend? = null,
     ): Pair<ByteArray?, String> {
         var lastWhy = "no ${voice.engine} key"
         // Bounded by the size of the ring: every pass either succeeds, returns, or buries one
@@ -195,6 +235,18 @@ object Engines {
             if (r.ok) {
                 val field = if (voice.engine == SPEECHIFY) "audio_data" else "audio"
                 val b64 = Net.str(r.body, field) ?: return null to "no audio in the reply"
+                // WHAT THE PROVIDER SAYS IT BILLED, not what we think it should have. Speechify
+                // counts the characters it actually charged for; Hume states the duration it
+                // produced. Both are facts about this call rather than estimates of it.
+                spend?.add(
+                    voice.engine,
+                    if (voice.engine == SPEECHIFY) {
+                        Net.num(r.body, "billable_characters_count") ?: text.length.toDouble()
+                    } else {
+                        Net.num(r.body, "duration") ?: 0.0
+                    },
+                    text,
+                )
                 return try {
                     Base64.decode(b64, Base64.DEFAULT) to ""
                 } catch (e: IllegalArgumentException) {

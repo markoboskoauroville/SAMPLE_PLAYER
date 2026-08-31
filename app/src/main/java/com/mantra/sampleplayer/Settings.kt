@@ -127,6 +127,7 @@ fun SettingsScreen(
     waveScale: Int,
     waveColour: Int,
     updateState: String,
+    spendLines: List<String>,
     usage: Usage,
     keySummary: List<String>,
     keysHeld: Set<String>,
@@ -137,6 +138,7 @@ fun SettingsScreen(
     onWaveScale: (Int) -> Unit,
     onWaveColour: (Int) -> Unit,
     onCheckUpdates: () -> Unit,
+    onSpend: () -> Unit,
     onGetUpdate: () -> Unit,
     updateReady: Boolean,
     onClearGenerated: () -> Unit,
@@ -269,6 +271,32 @@ fun SettingsScreen(
         Spacer(Modifier.height(6.dp))
         Button("Keys \u2014 import, test, delete", Modifier.fillMaxWidth()) { onKeys() }
 
+        // ── WHAT HAS BEEN SPENT ──────────────────────────────────────────────────────────────
+        //
+        // The box is the log added up and nothing else. There is no running total stored anywhere,
+        // because a total kept beside a log is a number that can disagree with the lines it came
+        // from — and the day it does, there is no way to tell which one is lying.
+        Heading("SPENT")
+        if (spendLines.isEmpty()) {
+            Text(
+                "nothing spent yet",
+                color = DIM,
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+            )
+        } else {
+            for (line in spendLines) {
+                Text(
+                    line,
+                    color = providerColour(line.substringBefore(" ")),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Button("Open the log", Modifier.fillMaxWidth()) { onSpend() }
+
         // ── THIS VERSION ─────────────────────────────────────────────────────────────────────
         //
         // There is no store behind this app: it is installed by downloading an APK from a GitHub
@@ -350,6 +378,17 @@ fun SettingsScreen(
                 "engines and either one is enough; Hume needs its API key AND its secret key. " +
                 "Anything else in the note is kept and testable and never called by this app. " +
                 "Keys are never displayed anywhere.",
+        )
+        Help(
+            "Spent",
+            "One line is written for every billable call, with the number the PROVIDER says it " +
+                "charged for: Speechify states the characters it billed, Hume the seconds it " +
+                "produced, AssemblyAI the audio duration it read. Those are facts about the call " +
+                "rather than estimates. The box is the log added up, so clearing the log empties " +
+                "the box \u2014 there is no second number kept anywhere that could disagree. " +
+                "Money appears only once a rate is entered, because nothing here knows what you " +
+                "pay and an invented price would look exactly as certain as the measured count " +
+                "beside it.",
         )
         Help(
             "Check for updates",

@@ -1217,6 +1217,50 @@ check(
     "replacing itself would mean the permission to install anything at all",
 )
 
+# ── WHAT WAS SPENT ────────────────────────────────────────────
+spend_code = code_only(src["Spend.kt"])
+check(
+    "the total is computed from the log rather than stored",
+    "fun totals()" in spend_code and "totalFile" not in spend_code,
+    "a total kept beside a log is a number that can disagree with the lines it came from",
+)
+check(
+    "each provider keeps its own unit",
+    "val UNITS = mapOf(" in spend_code,
+    "characters added to seconds is a number that means nothing",
+)
+check(
+    "rates default to nothing rather than to a guess",
+    "const val NO_RATE = 0.0" in spend_code,
+    "an invented price looks exactly as certain as the measured count beside it",
+)
+check(
+    "a call that billed nothing is not logged",
+    "if (units <= 0.0) return" in spend_code,
+    "a row saying zero has to be read to discover it says nothing",
+)
+check(
+    "a torn last line does not take the file down",
+    "runCatching { JSONObject(line) }.getOrNull() ?: continue" in spend_code,
+    "one lost call rather than a lost file",
+)
+check(
+    "what a call cost comes from the provider",
+    "billable_characters_count" in voices_code and "audio_duration" in voices_code,
+    "facts about the call rather than estimates of it",
+)
+check(
+    "only Hume has a credit test",
+    "fun humeCredit(" in voices_code
+    and 'row.providerId == "hume"' in code_only(src["KeysScreen.kt"]),
+    "nothing else publishes a balance: probed with real keys on 30.8.2026",
+)
+check(
+    "the credit probe does not depend on one voice existing",
+    '"utterances":[{"text":"Hi."}]' in voices_code,
+    "a probe tied to a voice would one day report no credit when that voice was retired",
+)
+
 # ── NOTHING TESTED MAY BE UNREACHABLE ─────────────────────────────────────────
 #
 # v1 shipped with a ported state machine that nothing called, and a suite of green tests proving
@@ -1249,7 +1293,7 @@ for required in [
 
 print()
 print(f"checks run: {len(checks_run)}   failures: {len(failures)}")
-if len(checks_run) < 186:
+if len(checks_run) < 198:
     sys.exit(f"only {len(checks_run)} checks ran: this file is broken, not the code")
 if failures:
     sys.exit("failed: " + ", ".join(failures))

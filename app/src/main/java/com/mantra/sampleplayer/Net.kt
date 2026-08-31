@@ -96,6 +96,25 @@ object Net {
     }
 
     /** A very small JSON string reader, so the app carries no JSON library for four fields. */
+    /**
+     * A NUMBER out of a JSON body, for the fields that say what a call cost.
+     *
+     * Separate from [str] because a number is not quoted, and reading it as a string then
+     * converting would return null for every one of them — which would look exactly like a
+     * provider that does not report its billing, and quietly leave the log empty.
+     */
+    fun num(body: String, key: String): Double? {
+        val at = body.indexOf("\"$key\"")
+        if (at < 0) return null
+        val colon = body.indexOf(':', at)
+        if (colon < 0) return null
+        var i = colon + 1
+        while (i < body.length && body[i] == ' ') i++
+        val start = i
+        while (i < body.length && (body[i].isDigit() || body[i] == '.' || body[i] == '-')) i++
+        return body.substring(start, i).toDoubleOrNull()
+    }
+
     fun str(json: String, key: String): String? {
         val i = json.indexOf("\"$key\"")
         if (i < 0) return null
