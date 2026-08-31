@@ -288,10 +288,21 @@ class MainActivity : ComponentActivity() {
         var playing by remember { mutableStateOf<Int?>(null) }
         var fraction by remember { mutableStateOf(0f) }
         var message by remember { mutableStateOf("") }
-        var showSettings by remember { mutableStateOf(false) }
-        var optionsFor by remember { mutableStateOf<Int?>(null) }
+        /**
+         * WHICH OF THE THREE IS SHOWING, and which cell they will all go back to.
+         *
+         * One switch rather than three booleans. Three could be true at once, and the day two of
+         * them were, the screen underneath would be a screen nobody could reach the close button
+         * of — there is exactly one destination and the state should be able to hold exactly one.
+         */
+        var tab by remember { mutableStateOf<String?>(null) }
+        var tabSlot by remember { mutableStateOf(0) }
+
+        fun go(to: String) {
+            tab = to
+        }
+
         var editorFor by remember { mutableStateOf<Int?>(null) }
-        var showKeys by remember { mutableStateOf(false) }
         var keyRows by remember { mutableStateOf(keys.rows()) }
         var keyBusy by remember { mutableStateOf("") }
         var confirmOverwrite by remember { mutableStateOf<Int?>(null) }
@@ -481,7 +492,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        if (showKeys) {
+        if (tab == "keys") {
             KeysScreen(
                 rows = keyRows,
                 busy = keyBusy,
@@ -532,12 +543,14 @@ class MainActivity : ComponentActivity() {
                     keyRows = keys.rows()
                     keyBusy = "deleted"
                 },
-                onBack = { showKeys = false },
+                onBack = { tab = null },
+                onTab = { go(it) },
+                tabSlot = tabSlot,
             )
             return
         }
 
-        val openSlot = optionsFor
+        val openSlot = if (tab == "cell") tabSlot else null
         if (openSlot != null) {
             SlotOptions(
                 slot = project.slot(openSlot),
@@ -553,7 +566,7 @@ class MainActivity : ComponentActivity() {
                         .walkTopDown().filter { it.isFile }.forEach { it.delete() }
                     project = load(project.id, slotCountNow())
                     message = "cell ${openSlot + 1} deleted"
-                    optionsFor = null
+                    tab = null
                 },
                 onEngine = { chosen ->
                     engine = chosen
@@ -586,7 +599,7 @@ class MainActivity : ComponentActivity() {
                                 stage = why
                                 if (list.isNotEmpty()) {
                                     chooserFor = openSlot
-                                    optionsFor = null
+                                    tab = null
                                 }
                             }
                         },
@@ -602,7 +615,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onEdit = {
                     editorFor = openSlot
-                    optionsFor = null
+                    tab = null
                 },
                 onTranscribe = {
                     work({ stage = it }) {
@@ -668,12 +681,27 @@ class MainActivity : ComponentActivity() {
                     project = load(project.id, slotCountNow())
                     stage = if (now) "marked to loop" else "loop off"
                 },
-                onBack = { optionsFor = null },
+                onBack = { tab = null },
+                onTab = { go(it) },
+                tabSlot = tabSlot,
+                onStep = { by ->
+                    // WORKING THROUGH A SET IS GOING FROM CELL TO CELL, and closing
+                    // one to open the next is two presses and a lost place for what
+                    // is one step. It stops at the ends rather than wrapping: cell 1
+                    // after cell 30 is a surprise, and the set has an order.
+                    val at = tabSlot + by
+                    if (at in 0 until slotCountNow()) {
+                        tabSlot = at
+                        stage = ""
+                    } else {
+                        stage = "that is the end of the set"
+                    }
+                },
             )
             return
         }
 
-        if (showSettings) {
+        if (tab == "settings") {
             // A SCREEN, NOT A SHEET OVER THE GRID. design-language.md: a panel that covers the
             // thing it configures leaves nowhere to look while deciding, and v5 of the stopwatch
             // shipped exactly that and had no way back out of it in landscape.
@@ -692,7 +720,7 @@ class MainActivity : ComponentActivity() {
                 onKeys = {
                     keyRows = keys.rows()
                     keyBusy = ""
-                    showKeys = true
+                    go("keys")
                 },
                 onPlayMode = {
                     playMode = it
@@ -751,7 +779,9 @@ class MainActivity : ComponentActivity() {
                 },
                 onAppProperties = { openAppProperties() },
                 onPermissions = { openAccessibilitySettings() },
-                onBack = { showSettings = false },
+                onBack = { tab = null },
+                onTab = { go(it) },
+                tabSlot = tabSlot,
             )
             return
         }
@@ -892,7 +922,8 @@ class MainActivity : ComponentActivity() {
                             // be asked to do.
                             when (val p = Gesture.longPress(mode, project, slot.index)) {
                                 is Press.Clear -> {
-                                    optionsFor = p.slot
+                                    tabSlot = p.slot
+                                    go("cell")
                                     stage = ""
                                     engine = null
                                     catalogue = emptyList()
@@ -973,7 +1004,7 @@ class MainActivity : ComponentActivity() {
                 }
                 // The gear last, and narrow. It is the control pressed least often in the app and
                 // it sits at the end of the row for that reason, not because there was space left.
-                Button("\u2699", Modifier.width(44.dp)) { showSettings = true }
+                Button("\u2699", Modifier.width(44.dp)) { go("settings") }
             }
         }
     }

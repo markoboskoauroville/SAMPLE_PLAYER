@@ -524,8 +524,37 @@ check(
 options_code = code_only(src["SlotOptions.kt"])
 check(
     "a long press opens a menu",
-    "optionsFor = p.slot" in ui_code,
+    'tabSlot = p.slot' in ui_code and 'go("cell")' in ui_code,
     "the gesture that deletes must not be the gesture that opens options",
+)
+check(
+    "there is one switch for the three screens rather than three booleans",
+    'var tab by remember { mutableStateOf<String?>(null) }' in ui_code
+    and "showSettings" not in ui_code and "optionsFor" not in ui_code,
+    "three booleans can all be true, and the day two are, the screen underneath has no way out",
+)
+check(
+    "all three screens carry the same tab row",
+    all("Tabs(" in code_only(src[f])
+        for f in ["SlotOptions.kt", "Settings.kt", "KeysScreen.kt"]),
+    "whichever was asked for opens first and the other two are one press away",
+)
+tabs_code = code_only(src["Ui.kt"])
+check(
+    "the tab row is in one place",
+    tabs_code.count("fun Tabs(") == 1,
+    "three copies would drift apart the first time one was restyled",
+)
+check(
+    "the keyring is always last",
+    tabs_code.index('onTab("cell")') < tabs_code.index('onTab("settings")')
+    < tabs_code.index('onTab("keys")'),
+    "a row whose contents move is a row that has to be read every time",
+)
+check(
+    "the cell arrows stop at the ends rather than wrapping",
+    "at in 0 until slotCountNow()" in ui_code,
+    "cell 1 arriving after the last one is a surprise, and the set has an order",
 )
 check(
     "delete is a labelled control with a warning beside it",

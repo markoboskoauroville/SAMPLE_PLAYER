@@ -143,6 +143,8 @@ fun SettingsScreen(
     onAppProperties: () -> Unit,
     onPermissions: () -> Unit,
     onBack: () -> Unit,
+    onTab: (String) -> Unit,
+    tabSlot: Int?,
 ) {
     Column(
         Modifier
@@ -153,6 +155,7 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         ScreenHeader("Settings   v$version", onBack)
+        Tabs("settings", tabSlot, onTab)
 
         // ── CELLS ────────────────────────────────────────────────────────────────────────────
         Heading("CELLS")

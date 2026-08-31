@@ -67,6 +67,9 @@ fun SlotOptions(
     onEngine: (String) -> Unit,
     onRevert: () -> Unit,
     onBack: () -> Unit,
+    onTab: (String) -> Unit,
+    tabSlot: Int?,
+    onStep: (Int) -> Unit,
 ) {
     Column(
         Modifier
@@ -77,6 +80,17 @@ fun SlotOptions(
             .verticalScroll(rememberScrollState()),
     ) {
         ScreenHeader("Cell %02d".format(slot.index + 1), onBack)
+        Tabs("cell", tabSlot, onTab)
+
+        // ‹ AND ›, INSIDE THE CELL'S OWN CONTENT rather than beside the tabs. They move the CELL
+        // and not the tab, and a control that sits in a tab row should change the tab.
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Button("\u2039 previous", Modifier.weight(1f)) { onStep(-1) }
+            Button("next \u203a", Modifier.weight(1f)) { onStep(1) }
+        }
 
         // THE LINE IS EDITABLE, NOT DISPLAYED.
         //
@@ -207,6 +221,19 @@ fun SlotOptions(
                 "the chosen voice speaks them. If this cell has no voice yet you will be asked " +
                 "for one first. It works on an empty cell, so a set can mix lines you recorded " +
                 "with lines you wrote.",
+        )
+        Help(
+            "\u2039 previous and next \u203a",
+            "Moves to the cell before or after this one, and everything on the page follows: the " +
+                "line, the waveform, the voice, the loop flag. It stops at the ends rather than " +
+                "wrapping \u2014 the set has an order, and the first cell arriving after the " +
+                "last one is a surprise.",
+        )
+        Help(
+            "The three tabs",
+            "The cell, the settings and the keyring always travel together, in that order, with " +
+                "the keyring last. Whichever one you asked for opens first and the other two are " +
+                "one press away, so nothing has to be closed to reach anything.",
         )
         Help(
             "The line",

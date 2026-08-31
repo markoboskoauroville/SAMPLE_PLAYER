@@ -50,6 +50,8 @@ fun KeysScreen(
     onTestAll: () -> Unit,
     onDelete: (KeyRow) -> Unit,
     onBack: () -> Unit,
+    onTab: (String) -> Unit,
+    tabSlot: Int?,
 ) {
     Column(
         Modifier
@@ -60,6 +62,7 @@ fun KeysScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         ScreenHeader("Keys", onBack)
+        Tabs("keys", tabSlot, onTab)
 
         // WHAT IS NEEDED, AT THE TOP OF THE SCREEN WHERE IT GETS FIXED. Settings says the same
         // thing; this is the place somebody is standing when they can do something about it.

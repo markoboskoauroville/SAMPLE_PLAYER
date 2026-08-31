@@ -331,3 +331,44 @@ fun ScreenHeader(title: String, onClose: () -> Unit) {
         }
     }
 }
+
+/**
+ * THREE TABS THAT ALWAYS TRAVEL TOGETHER.
+ *
+ * The cell, the settings and the keyring were three destinations reached from three different
+ * places — a long press, the gear, and a button buried inside settings. Getting from one to
+ * another meant closing, finding the way in again, and losing whichever cell you were on.
+ *
+ * They are one screen with three tabs now. Whichever one was asked for opens first and the other
+ * two are one press away, ALWAYS IN THE SAME ORDER, with the keyring always last. A row whose
+ * contents move is a row that has to be read; this one is learned once.
+ *
+ * THE CELL TAB IS NAMED AFTER THE CELL. "Cell 03" rather than "Cell", because the tab is the only
+ * thing on the settings and keyring screens that says which cell you will go back to.
+ */
+@Composable
+fun Tabs(active: String, slot: Int?, onTab: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Button(
+            label = if (slot == null) "Cell" else "Cell %02d".format(slot + 1),
+            modifier = Modifier.weight(1f),
+            solid = active == "cell",
+            accent = PLAY_AMBER,
+        ) { onTab("cell") }
+        Button(
+            label = "Settings",
+            modifier = Modifier.weight(1f),
+            solid = active == "settings",
+            accent = PLAY_AMBER,
+        ) { onTab("settings") }
+        Button(
+            label = "Keyring",
+            modifier = Modifier.weight(1f),
+            solid = active == "keys",
+            accent = PLAY_AMBER,
+        ) { onTab("keys") }
+    }
+}
