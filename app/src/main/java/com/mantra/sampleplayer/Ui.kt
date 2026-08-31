@@ -372,3 +372,30 @@ fun Tabs(active: String, slot: Int?, onTab: (String) -> Unit) {
         ) { onTab("keys") }
     }
 }
+
+/**
+ * A COLOUR PER PROVIDER, so a list of forty-eight keys has visible seams in it.
+ *
+ * The note holds five providers and twenty-one accounts of one of them. As a column of monospace
+ * text that is a wall, and finding where Hume ends and Speechify begins means reading every line —
+ * which is exactly the reading nobody does, and how a key ends up tested against the wrong host.
+ *
+ * THESE ARE NOT THE STATE COLOURS. Green, amber and red already mean working, busy and refused on
+ * the same row. Provider colour lives on the NAME and state on the result beneath it: two
+ * meanings, two positions, so neither has to be guessed from a hue.
+ *
+ * Far apart on the wheel and different in brightness as well as hue, because this is read for
+ * hours by somebody with low vision, and a palette that relies on hue alone stops working in the
+ * evening.
+ */
+fun providerColour(provider: String): Color = when (provider.lowercase().trim()) {
+    "assemblyai" -> Color(0xFF22D3EE)   // cyan — the one that is required
+    "speechify" -> Color(0xFFA78BFA)    // violet
+    "hume" -> Color(0xFFF472B6)         // pink
+    "elevenlabs" -> Color(0xFF60A5FA)   // blue, beside Speechify because sk_ makes them neighbours
+    "groq" -> Color(0xFF2DD4BF)         // teal
+    "gemini" -> Color(0xFFFDE047)       // yellow
+    "anthropic" -> Color(0xFFFB923C)    // orange
+    "github" -> Color(0xFFCBD5E1)       // near white: kept and testable, never called by this app
+    else -> Color(0xFF94A3B8)
+}

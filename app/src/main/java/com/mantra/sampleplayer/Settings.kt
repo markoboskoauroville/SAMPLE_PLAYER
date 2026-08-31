@@ -255,12 +255,16 @@ fun SettingsScreen(
         }
         if (keySummary.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            Text(
-                keySummary.joinToString("\n"),
-                color = Color.White,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-            )
+            // ONE LINE PER PROVIDER, EACH IN ITS OWN COLOUR. The summary is built as
+            // "provider — n (labels…)", so the provider is whatever stands before the first space.
+            for (line in keySummary) {
+                Text(
+                    line,
+                    color = providerColour(line.substringBefore(" ")),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Button("Keys \u2014 import, test, delete", Modifier.fillMaxWidth()) { onKeys() }

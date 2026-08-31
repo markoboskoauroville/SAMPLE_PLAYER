@@ -117,7 +117,9 @@ fun KeysScreen(
                     Text(
                         (Providers.byId(row.providerId)?.display ?: row.providerId) +
                             if (row.paired) "  (pair)" else "",
-                        color = Color.White,
+                        // The provider's own colour, so the seams between them are visible without
+                        // reading. State stays on the result line beneath.
+                        color = providerColour(row.providerId),
                         fontSize = 12.sp,
                         fontFamily = FontFamily.Monospace,
                     )
