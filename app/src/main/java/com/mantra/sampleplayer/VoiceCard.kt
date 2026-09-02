@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
@@ -79,6 +81,7 @@ fun VoiceCard(
     onPreviewDirection: (Emotions.Direction) -> Unit,
     onDirection: (String) -> Unit,
     onUse: () -> Unit,
+    onCopy: () -> Unit,
     canUse: Boolean = true,
     onClose: () -> Unit,
 ) {
@@ -95,6 +98,24 @@ fun VoiceCard(
         ScreenHeader(voice.name, onClose)
 
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // THE GLYPH. Two letters is not a portrait and is not pretending to be one — what it
+            // buys is that every card has something in the same place, so the eye learns where to
+            // look before anything is drawn there properly.
+            Box(
+                Modifier
+                    .size(46.dp)
+                    .border(2.dp, tint)
+                    .padding(2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    Spec.initials(voice.name),
+                    color = tint,
+                    fontSize = 18.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
             Text(
                 voice.name,
                 color = tint,
@@ -139,6 +160,11 @@ fun VoiceCard(
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button("Hear it", Modifier.weight(1f)) { onPreviewPlain() }
+            // COPY THE WHOLE SPECIFICATION, not the name. What another chat needs in order to use
+            // this voice is the endpoint, the header shape, the body, the field the audio comes
+            // back in, the billing unit and what it can be directed to do — all of it measured
+            // here already, at the cost of three releases. Without this it gets researched again.
+            Button("Copy") { onCopy() }
             // NO CELL, NO USE. Opened from the Voice Browser there is nothing to speak into, and
             // a button that cannot do its job is worse than an absent one: it has to be pressed to
             // discover that, and the pressing is what teaches somebody the app is unreliable.

@@ -68,7 +68,12 @@ object Facets {
     const val STYLE = "style"
     const val PITCH = "pitch"
 
-    val ORDER = listOf(GENDER, AGE, LANGUAGE, ACCENT, USE, TIMBRE, STYLE, PITCH)
+    const val ROLE = "role"
+
+    // ROLE COMES SECOND, after gender. "An actor with a British accent" is the question actually
+    // being asked, and the facets should be in the order somebody narrows by rather than the order
+    // the providers happen to publish.
+    val ORDER = listOf(GENDER, ROLE, AGE, LANGUAGE, ACCENT, USE, TIMBRE, STYLE, PITCH)
 
     /** Every value present for a facet, sorted, so the chips are stable between openings. */
     fun values(voices: List<VoiceInfo>, facet: String): List<String> {
@@ -192,11 +197,18 @@ object Catalogue {
                         }
                     }
                 }
+                // THE ROLE IS IN THE NAME AND NOWHERE ELSE. Hume publishes LANGUAGE,
+                // ACCENT, GENDER and AGE, and none of them says whether a voice is an actor or a
+                // narrator — but "Nature Documentary Narrator" and "Male English Actor" do.
+                // Added as a tag so the chips, the counts and the search pick it up with no
+                // further plumbing: everything downstream already works on facet:value strings.
+                val name = v.optString("name")
+                Roles.tagFor(name)?.let { all.add(it) }
                 out.add(
                     VoiceInfo(
                         engine = Engines.HUME,
                         id = v.optString("id"),
-                        name = v.optString("name"),
+                        name = name,
                         gender = first("GENDER"),
                         age = first("AGE"),
                         language = first("LANGUAGE"),
@@ -254,7 +266,12 @@ object Catalogue {
                         language = Locales.name(locale),
                         accent = tags.firstOrNull { it.startsWith("accent:") }
                             ?.removePrefix("accent:").orEmpty().ifBlank { locale },
-                        tags = tags + ("locale:" + locale.lowercase()),
+                        // Speechify names are plain — none of its 992 carries a role word,
+                        // checked — so its role comes from its own `use-case` tag instead, which
+                        // is what that facet has always been.
+                        tags = tags + ("locale:" + locale.lowercase()) +
+                            tags.filter { it.startsWith("use-case:") }
+                                .map { "role:" + it.removePrefix("use-case:") },
                         preview = v.optString("preview_audio").takeIf { it.isNotBlank() },
                     ),
                 )

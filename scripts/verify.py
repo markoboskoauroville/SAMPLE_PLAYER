@@ -545,6 +545,32 @@ check(
     tabs_code.count("fun Tabs(") == 1,
     "three copies would drift apart the first time one was restyled",
 )
+roles_code = code_only(src["Roles.kt"])
+check(
+    "the role is read from the name",
+    "object Roles" in roles_code and "fun tagFor(" in roles_code,
+    "Hume publishes four tags and none is a role, but the NAME carries one on 78 of 160",
+)
+check(
+    "a name with no role word gets no role",
+    "return null" in roles_code,
+    "a blank is a fact; a guess is not",
+)
+check(
+    "the role reaches the facets as a tag",
+    "Roles.tagFor(name)" in catalogue_code and "ROLE" in catalogue_code,
+    "the chips, counts and search already work on facet:value strings",
+)
+check(
+    "the card carries a glyph and a copy",
+    "Spec.initials(" in card_code and "onCopy()" in card_code,
+    "every card has something in the same place, and the copy is the whole specification",
+)
+check(
+    "the specification is measured rather than remembered",
+    "api.sws.speechify.com" in roles_code and "E0300" in roles_code,
+    "otherwise the chat it is pasted into researches it all again",
+)
 check(
     "the voice browser is its own screen with no cell behind it",
     "fun VoiceBrowser(" in code_only(src["VoiceBrowser.kt"])

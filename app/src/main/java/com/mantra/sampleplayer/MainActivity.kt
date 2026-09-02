@@ -1,6 +1,8 @@
 package com.mantra.sampleplayer
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaPlayer
@@ -386,6 +388,13 @@ class MainActivity : ComponentActivity() {
                 },
                 onDirection = { direction = it },
                 canUse = choosing != null,
+                onCopy = {
+                    val clip = getSystemService(ClipboardManager::class.java)
+                    clip?.setPrimaryClip(
+                        ClipData.newPlainText("voice specification", Spec.text(card)),
+                    )
+                    stage = "${card.name} — specification copied"
+                },
                 onUse = {
                     val slot = choosing ?: return@VoiceCard
                     work({ stage = it }) {
