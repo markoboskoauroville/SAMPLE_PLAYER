@@ -79,6 +79,7 @@ fun VoiceCard(
     onPreviewDirection: (Emotions.Direction) -> Unit,
     onDirection: (String) -> Unit,
     onUse: () -> Unit,
+    canUse: Boolean = true,
     onClose: () -> Unit,
 ) {
     val tint = cardTint(voice)
@@ -127,9 +128,23 @@ fun VoiceCard(
         }
 
         Spacer(Modifier.height(12.dp))
+        if (!canUse) {
+            Text(
+                "browsing \u2014 open a cell to use a voice on it",
+                color = Color(0xFF71717A),
+                fontSize = 10.sp,
+                fontFamily = FontFamily.Monospace,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Button("Hear it", Modifier.weight(1f)) { onPreviewPlain() }
-            Button("Use this voice", Modifier.weight(1f), solid = true, accent = tint) { onUse() }
+            // NO CELL, NO USE. Opened from the Voice Browser there is nothing to speak into, and
+            // a button that cannot do its job is worse than an absent one: it has to be pressed to
+            // discover that, and the pressing is what teaches somebody the app is unreliable.
+            if (canUse) {
+                Button("Use this voice", Modifier.weight(1f), solid = true, accent = tint) { onUse() }
+            }
         }
 
         if (playing.isNotBlank()) {

@@ -268,6 +268,9 @@ class MainActivity : ComponentActivity() {
         var waveScale by remember { mutableStateOf(prefs.waveScale) }
         var waveColour by remember { mutableStateOf(prefs.waveColourIndex) }
         var updateState by remember { mutableStateOf("") }
+        // Which engine the browser is showing. Null until one is picked, so the first open does
+        // not fetch a catalogue nobody asked for.
+        var browserEngine by remember { mutableStateOf<String?>(null) }
         var showSpend by remember { mutableStateOf(false) }
         var spendTick by remember { mutableStateOf(0) }
         var updateUrl by remember { mutableStateOf<String?>(null) }
@@ -360,7 +363,10 @@ class MainActivity : ComponentActivity() {
 
         val choosing = chooserFor
         val card = cardFor
-        if (card != null && choosing != null) {
+        // NO LONGER REQUIRES A CELL. The Voice Browser opens cards with nothing behind them, which
+        // is the whole point of it: deciding who reads a part happens before there is a take to
+        // read it over.
+        if (card != null) {
             VoiceCard(
                 voice = card,
                 starred = VoiceSearch.key(card) in starred,
@@ -379,9 +385,11 @@ class MainActivity : ComponentActivity() {
                     hearVoice(card, Emotions.previewLine(card.name, d), d.text) { stage = it }
                 },
                 onDirection = { direction = it },
+                canUse = choosing != null,
                 onUse = {
+                    val slot = choosing ?: return@VoiceCard
                     work({ stage = it }) {
-                        val words = project.slot(choosing).words
+                        val words = project.slot(slot).words
                         if (words.isBlank()) {
                             setStage("transcribe this cell first")
                             return@work
@@ -397,13 +405,13 @@ class MainActivity : ComponentActivity() {
                             setStage(why)
                             return@work
                         }
-                        val out = Paths.generated(filesDir, project.id, choosing, card.engine)
+                        val out = Paths.generated(filesDir, project.id, slot, card.engine)
                         out.parentFile?.mkdirs()
                         out.writeBytes(bytes)
-                        Words(this@MainActivity).setVoice(project.id, choosing, card.engine)
+                        Words(this@MainActivity).setVoice(project.id, slot, card.engine)
                         Words(this@MainActivity).setVoiceId(
                             project.id,
-                            choosing,
+                            slot,
                             VoiceSearch.key(card),
                         )
                         runOnUiThread {
@@ -490,6 +498,56 @@ class MainActivity : ComponentActivity() {
                         startPlaying(editing, project, playMode) { playing = it }
                     }
                 },
+            )
+            return
+        }
+
+        if (tab == "voices") {
+            // THE CATALOGUE IS FETCHED ONCE PER ENGINE AND KEPT for as long as the app is open.
+            // Speechify is 992 voices over five cursor pages: fetching that every time the tab is
+            // opened would make the tab feel broken.
+            // THROUGH THE APP'S OWN WORKER, not a coroutine scope. Every other network call in
+            // this file goes through `work`, which already carries the stage message, the thread
+            // and the failure handling — a second way of getting off the main thread would be a
+            // second place for those three things to be got wrong.
+            LaunchedEffect(browserEngine) {
+                val e = browserEngine
+                if (e != null && catalogue.none { it.engine == e }) {
+                    work({ stage = it }) {
+                        setStage("fetching the $e catalogue…")
+                        val (list, why) = if (e == Engines.SPEECHIFY) {
+                            Catalogue.speechify(keys.ring(e))
+                        } else {
+                            Catalogue.hume(keys.ring(e))
+                        }
+                        runOnUiThread {
+                            // ADDED TO, NOT REPLACED. Switching from Speechify to Hume and back
+                            // would otherwise re-fetch 992 voices every time, which is five cursor
+                            // pages for a list that was already on screen a moment ago.
+                            if (list.isNotEmpty()) catalogue = catalogue.filter { it.engine != e } + list
+                            stage = why
+                        }
+                    }
+                }
+            }
+            VoiceBrowser(
+                engine = browserEngine ?: Engines.SPEECHIFY,
+                voices = catalogue.filter { it.engine == (browserEngine ?: Engines.SPEECHIFY) },
+                loading = stage,
+                starred = starred,
+                canSpeechify = keys.has(Engines.SPEECHIFY),
+                canHume = keys.has(Engines.HUME),
+                onEngine = { browserEngine = it },
+                onStar = { v ->
+                    val k = VoiceSearch.key(v)
+                    starred = if (k in starred) starred - k else starred + k
+                    prefs.starredVoices = starred
+                },
+                onPreview = { v -> hearVoice(v, "This is ${v.name}.", "") { stage = it } },
+                onOpen = { cardFor = it },
+                onTab = { go(it) },
+                tabSlot = tabSlot,
+                onBack = { tab = null },
             )
             return
         }

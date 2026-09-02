@@ -358,6 +358,15 @@ fun Tabs(active: String, slot: Int?, onTab: (String) -> Unit) {
             solid = active == "cell",
             accent = PLAY_AMBER,
         ) { onTab("cell") }
+        // VOICES SITS BETWEEN THE CELL AND THE SETTINGS, because that is the order the work
+        // happens in: a cell, the voice that reads it, and only then how the app is set up. The
+        // keyring stays last.
+        Button(
+            label = "Voices",
+            modifier = Modifier.weight(1f),
+            solid = active == "voices",
+            accent = PLAY_AMBER,
+        ) { onTab("voices") }
         Button(
             label = "Settings",
             modifier = Modifier.weight(1f),

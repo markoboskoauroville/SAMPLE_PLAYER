@@ -546,8 +546,25 @@ check(
     "three copies would drift apart the first time one was restyled",
 )
 check(
+    "the voice browser is its own screen with no cell behind it",
+    "fun VoiceBrowser(" in code_only(src["VoiceBrowser.kt"])
+    and "canUse: Boolean" in code_only(src["VoiceCard.kt"]),
+    "deciding who reads a part happens before there is a take to read it over",
+)
+check(
+    "every row in the browser carries its own play",
+    "onPreview(v)" in code_only(src["VoiceBrowser.kt"]),
+    "opening a card per candidate is why nobody auditions",
+)
+check(
+    "the browser chips carry counts computed against the other filters",
+    "pool.count { Facets.has(it, facet, value) }" in code_only(src["VoiceBrowser.kt"]),
+    "a chip that would leave nothing says 0 before it is pressed rather than after",
+)
+check(
     "the keyring is always last",
-    tabs_code.index('onTab("cell")') < tabs_code.index('onTab("settings")')
+    tabs_code.index('onTab("cell")') < tabs_code.index('onTab("voices")')
+    < tabs_code.index('onTab("settings")')
     < tabs_code.index('onTab("keys")'),
     "a row whose contents move is a row that has to be read every time",
 )
